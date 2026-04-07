@@ -83,10 +83,10 @@ jobs:
           BRANCH="${{ github.ref_name }}"
           DEPLOY_PATH="/home/bioattend/${BRANCH}"
           echo "Installation des dépendances Python dans ${DEPLOY_PATH}..."
-          sshpass -e ssh -o StrictHostKeyChecking=no "${PI_USER}@${PI_HOST}" "DEPLOY_PATH=${DEPLOY_PATH}"' << 'EOF'
+          sshpass -e ssh -o StrictHostKeyChecking=no "${PI_USER}@${PI_HOST}" bash << EOF
             set -euo pipefail
-            cd "$DEPLOY_PATH"
-            echo "Répertoire actuel : $(pwd)"
+            cd "${DEPLOY_PATH}"
+            echo "Répertoire actuel : \$(pwd)"
             
             if [ ! -d venv ]; then
               echo "Création du venv..."
