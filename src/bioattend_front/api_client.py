@@ -24,7 +24,15 @@ def identify_embedding(embedding: list[float], settings: Settings) -> dict[str, 
     auth_mode = "none"
     if settings.api_token:
         headers["Authorization"] = f"Bearer {settings.api_token}"
-        auth_mode = "bearer"
+        headers["X-API-Key"] = settings.api_token
+        auth_mode = "bearer+x-api-key"
+
+    auth_debug = {
+        "auth_mode": auth_mode,
+        "token_masked": _mask_token(settings.api_token),
+        "token_len": len(settings.api_token),
+        "headers_sent": sorted(list(headers.keys())),
+    }
 
     if settings.debug:
         print(
@@ -50,12 +58,15 @@ def identify_embedding(embedding: list[float], settings: Settings) -> dict[str, 
         )
     except requests.RequestException as exc:
         duration_ms = round((time.monotonic() - started_at) * 1000, 2)
-        return {
+        result = {
             "ok": False,
             "duration_ms": duration_ms,
             "error": f"API request failed: {exc}",
             "target": settings.server_url,
         }
+        if settings.debug:
+            result["auth_debug"] = auth_debug
+        return result
 
     duration_ms = round((time.monotonic() - started_at) * 1000, 2)
     body: Any
@@ -64,10 +75,13 @@ def identify_embedding(embedding: list[float], settings: Settings) -> dict[str, 
     except ValueError:
         body = {"raw": response.text}
 
-    return {
+    result = {
         "ok": 200 <= response.status_code < 300,
         "duration_ms": duration_ms,
         "status_code": response.status_code,
         "target": settings.server_url,
         "response": body,
     }
+    if settings.debug:
+        result["auth_debug"] = auth_debug
+    return result
