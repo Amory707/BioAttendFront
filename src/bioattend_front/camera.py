@@ -39,6 +39,19 @@ def _resolve_sources(settings: Settings) -> list[str]:
     return ["opencv", "picamera2"]
 
 
+def _normalize_frame(frame: Any) -> Any:
+    if frame is None:
+        return None
+    if hasattr(frame, "ndim") and frame.ndim == 3 and frame.shape[2] == 4:
+        return cv2.cvtColor(frame, cv2.COLOR_BGRA2BGR)
+    return frame
+
+
+def _shape_to_list(frame: Any) -> list[int]:
+    height, width = frame.shape[:2]
+    return [int(height), int(width)]
+
+
 def _probe_camera_picamera2(settings: Settings) -> dict[str, Any]:
     attempt: dict[str, Any] = {
         "source": "picamera2",
@@ -91,6 +104,7 @@ def _probe_camera_picamera2(settings: Settings) -> dict[str, Any]:
                 return {
                     "ok": True,
                     "camera": attempt,
+                    "frame": _normalize_frame(frame),
                     "platform": platform.platform(),
                     "note": "Camera opened and a frame was captured in memory.",
                 }
@@ -171,6 +185,7 @@ def _probe_camera_opencv(settings: Settings) -> dict[str, Any]:
             attempt["read_attempts"] = read_attempts
 
             if read_ok and frame is not None:
+                frame = _normalize_frame(frame)
                 height, width = frame.shape[:2]
                 attempt["frame_shape"] = [int(height), int(width)]
                 attempt["pixel_format_channels"] = int(frame.shape[2]) if len(frame.shape) == 3 else 1
@@ -180,6 +195,7 @@ def _probe_camera_opencv(settings: Settings) -> dict[str, Any]:
                 return {
                     "ok": True,
                     "camera": attempt,
+                    "frame": frame,
                     "platform": platform.platform(),
                     "note": "Camera opened and a frame was captured in memory.",
                 }
@@ -193,6 +209,18 @@ def _probe_camera_opencv(settings: Settings) -> dict[str, Any]:
 
 
 def probe_camera(settings: Settings) -> dict[str, Any]:
+    result = capture_frame(settings)
+    if result["ok"]:
+        frame = result.pop("frame", None)
+        if frame is not None:
+            camera = result.get("camera", {})
+            camera["frame_shape"] = _shape_to_list(frame)
+        return result
+
+    return result
+
+
+def capture_frame(settings: Settings) -> dict[str, Any]:
     attempts: list[dict[str, Any]] = []
 
     for source in _resolve_sources(settings):

@@ -2,8 +2,9 @@ from __future__ import annotations
 
 from flask import Flask, jsonify
 
-from .camera import probe_camera
+from .camera import capture_frame, probe_camera
 from .config import Settings
+from .face import detect_and_crop_face
 
 
 def create_app() -> Flask:
@@ -25,6 +26,29 @@ def create_app() -> Flask:
         result = probe_camera(settings)
         status_code = 200 if result["ok"] else 503
         return jsonify(result), status_code
+
+    @app.post("/diagnostics/face")
+    @app.get("/diagnostics/face")
+    def diagnostics_face() -> tuple[object, int]:
+        capture_result = capture_frame(settings)
+        if not capture_result["ok"]:
+            capture_result.pop("frame", None)
+            return jsonify(capture_result), 503
+
+        frame = capture_result.pop("frame")
+        face_result = detect_and_crop_face(frame)
+        face_result.pop("face_crop", None)
+
+        response = {
+            "ok": face_result.get("ok", False),
+            "camera": capture_result.get("camera"),
+            "face": face_result,
+            "platform": capture_result.get("platform"),
+        }
+
+        if response["ok"]:
+            return jsonify(response), 200
+        return jsonify(response), 422
 
     return app
 
