@@ -54,8 +54,33 @@ def probe_camera(settings: Settings) -> dict[str, Any]:
             capture.set(cv2.CAP_PROP_FRAME_WIDTH, settings.camera_width)
             capture.set(cv2.CAP_PROP_FRAME_HEIGHT, settings.camera_height)
 
-            read_ok, frame = capture.read()
+            if settings.camera_warmup_ms > 0:
+                time.sleep(settings.camera_warmup_ms / 1000)
+
+            read_ok = False
+            frame = None
+            read_attempts: list[dict[str, Any]] = []
+
+            for attempt_index in range(settings.camera_read_attempts):
+                read_started_at = time.monotonic()
+                current_read_ok, current_frame = capture.read()
+                read_attempts.append(
+                    {
+                        "index": attempt_index + 1,
+                        "read_ok": current_read_ok,
+                        "duration_ms": round((time.monotonic() - read_started_at) * 1000, 2),
+                    }
+                )
+                if current_read_ok and current_frame is not None:
+                    read_ok = True
+                    frame = current_frame
+                    break
+                time.sleep(0.1)
+
             attempt["read_ok"] = read_ok
+            attempt["warmup_ms"] = settings.camera_warmup_ms
+            attempt["read_attempt_count"] = settings.camera_read_attempts
+            attempt["read_attempts"] = read_attempts
 
             if read_ok and frame is not None:
                 height, width = frame.shape[:2]
@@ -71,7 +96,7 @@ def probe_camera(settings: Settings) -> dict[str, Any]:
                     "note": "Camera opened and a frame was captured in memory.",
                 }
 
-            attempt["error"] = "Camera opened but no frame could be read."
+            attempt["error"] = "Camera opened but no frame could be read after repeated attempts."
             attempts.append(attempt)
         finally:
             capture.release()

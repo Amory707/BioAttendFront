@@ -33,6 +33,8 @@ class Settings:
     camera_height: int
     camera_device: str
     camera_backend: str
+    camera_warmup_ms: int
+    camera_read_attempts: int
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -42,6 +44,8 @@ class Settings:
             camera_height=_to_int(os.getenv("CAMERA_HEIGHT"), default=720),
             camera_device=os.getenv("CAMERA_DEVICE", "0"),
             camera_backend=os.getenv("CAMERA_BACKEND", "auto").strip().lower(),
+            camera_warmup_ms=_to_int(os.getenv("CAMERA_WARMUP_MS"), default=800),
+            camera_read_attempts=_to_int(os.getenv("CAMERA_READ_ATTEMPTS"), default=10),
         )
 
     def as_public_dict(self) -> dict[str, object]:
