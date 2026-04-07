@@ -13,7 +13,7 @@ jobs:
     timeout-minutes: 25
     env:
       PI_HOST: ${{ secrets.PI_HOST }}
-      PI_USER: "pi"
+      PI_USER: "bioattend"
       TAILSCALE_AUTHKEY: ${{ secrets.TAILSCALE_AUTHKEY }}
       SSHPASS: ${{ secrets.PI_PASSWORD }}
     steps:
