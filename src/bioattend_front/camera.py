@@ -29,7 +29,94 @@ def _resolve_backends(backend_name: str) -> list[tuple[str, int]]:
     return backends
 
 
-def probe_camera(settings: Settings) -> dict[str, Any]:
+def _resolve_sources(settings: Settings) -> list[str]:
+    if settings.camera_source in {"opencv", "picamera2"}:
+        return [settings.camera_source]
+
+    machine = platform.machine().lower()
+    if machine.startswith("arm") or machine == "aarch64":
+        return ["picamera2", "opencv"]
+    return ["opencv", "picamera2"]
+
+
+def _probe_camera_picamera2(settings: Settings) -> dict[str, Any]:
+    attempt: dict[str, Any] = {
+        "source": "picamera2",
+        "device": settings.camera_device,
+        "read_attempt_count": settings.camera_read_attempts,
+        "warmup_ms": settings.camera_warmup_ms,
+    }
+
+    try:
+        from picamera2 import Picamera2
+    except Exception as exc:
+        attempt["opened"] = False
+        attempt["read_ok"] = False
+        attempt["error"] = f"Picamera2 unavailable: {exc}"
+        return {"ok": False, "attempt": attempt}
+
+    camera = None
+    try:
+        started_at = time.monotonic()
+        camera = Picamera2()
+        configuration = camera.create_preview_configuration(
+            main={"size": (settings.camera_width, settings.camera_height)}
+        )
+        camera.configure(configuration)
+        camera.start()
+        attempt["opened"] = True
+        attempt["duration_ms"] = round((time.monotonic() - started_at) * 1000, 2)
+
+        if settings.camera_warmup_ms > 0:
+            time.sleep(settings.camera_warmup_ms / 1000)
+
+        read_attempts: list[dict[str, Any]] = []
+        for attempt_index in range(settings.camera_read_attempts):
+            read_started_at = time.monotonic()
+            frame = camera.capture_array()
+            read_ok = frame is not None and getattr(frame, "size", 0) > 0
+            read_attempts.append(
+                {
+                    "index": attempt_index + 1,
+                    "read_ok": read_ok,
+                    "duration_ms": round((time.monotonic() - read_started_at) * 1000, 2),
+                }
+            )
+            if read_ok:
+                height, width = frame.shape[:2]
+                attempt["read_ok"] = True
+                attempt["read_attempts"] = read_attempts
+                attempt["frame_shape"] = [int(height), int(width)]
+                attempt["pixel_format_channels"] = int(frame.shape[2]) if len(frame.shape) == 3 else 1
+                return {
+                    "ok": True,
+                    "camera": attempt,
+                    "platform": platform.platform(),
+                    "note": "Camera opened and a frame was captured in memory.",
+                }
+            time.sleep(0.1)
+
+        attempt["read_ok"] = False
+        attempt["read_attempts"] = read_attempts
+        attempt["error"] = "Picamera2 started but no frame could be captured after repeated attempts."
+        return {"ok": False, "attempt": attempt}
+    except Exception as exc:
+        attempt["read_ok"] = False
+        attempt["error"] = f"Picamera2 capture failed: {exc}"
+        return {"ok": False, "attempt": attempt}
+    finally:
+        if camera is not None:
+            try:
+                camera.stop()
+            except Exception:
+                pass
+            try:
+                camera.close()
+            except Exception:
+                pass
+
+
+def _probe_camera_opencv(settings: Settings) -> dict[str, Any]:
     device = _resolve_device(settings.camera_device)
     backends = _resolve_backends(settings.camera_backend)
     attempts: list[dict[str, Any]] = []
@@ -41,6 +128,7 @@ def probe_camera(settings: Settings) -> dict[str, Any]:
         try:
             opened = capture.isOpened()
             attempt: dict[str, Any] = {
+                "source": "opencv",
                 "backend": backend_name,
                 "device": settings.camera_device,
                 "opened": opened,
@@ -101,10 +189,29 @@ def probe_camera(settings: Settings) -> dict[str, Any]:
         finally:
             capture.release()
 
+    return {"ok": False, "attempts": attempts}
+
+
+def probe_camera(settings: Settings) -> dict[str, Any]:
+    attempts: list[dict[str, Any]] = []
+
+    for source in _resolve_sources(settings):
+        if source == "picamera2":
+            result = _probe_camera_picamera2(settings)
+            if result["ok"]:
+                return result
+            attempts.append(result["attempt"])
+            continue
+
+        result = _probe_camera_opencv(settings)
+        if result["ok"]:
+            return result
+        attempts.extend(result["attempts"])
+
     return {
         "ok": False,
         "platform": platform.platform(),
         "attempts": attempts,
         "error": "Unable to open the camera or read a frame.",
-        "hint": "On Raspberry Pi CSI cameras, make sure the camera is enabled and exposed through a backend OpenCV can read.",
+        "hint": "On Raspberry Pi CSI cameras, prefer Picamera2/libcamera over direct OpenCV capture when V4L2 opens but returns no frames.",
     }
