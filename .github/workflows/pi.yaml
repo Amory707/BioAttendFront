@@ -102,8 +102,6 @@ jobs:
           BRANCH="${{ github.ref_name }}"
           DEPLOY_PATH="/home/bioattend/${BRANCH}"
           echo "Installation des dépendances Python dans ${DEPLOY_PATH}..."
-          
-          # On envoie la variable DEPLOY_PATH au shell distant
           sshpass -e ssh -o StrictHostKeyChecking=no "${PI_USER}@${PI_HOST}" "DEPLOY_PATH=${DEPLOY_PATH}"' << 'EOF'
             set -euo pipefail
             cd "$DEPLOY_PATH"
@@ -124,4 +122,4 @@ jobs:
               echo "⚠️ requirements.txt non trouvé"
               exit 1
             fi
-EOF
+          EOF
