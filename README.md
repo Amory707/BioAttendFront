@@ -61,6 +61,7 @@ Etat actuel :
 2. une route de configuration expose les parametres non sensibles charges depuis l'environnement
 3. une route de diagnostic camera teste l'acquisition d'une frame en memoire
 4. une route de diagnostic visage teste detection + crop en memoire
+5. une route de diagnostic embedding teste la generation du vecteur
 
 ## Pourquoi Picamera2 pour la capture camera
 
@@ -120,6 +121,7 @@ Les briques minimales en place sont :
 3. endpoint de diagnostic camera
 4. fallback de capture Picamera2 pour Raspberry Pi
 5. endpoint de diagnostic detection/crop visage
+6. endpoint de diagnostic embedding InsightFace
 
 Fichiers principaux :
 
@@ -156,6 +158,7 @@ Routes utiles :
 2. GET /diagnostics/config
 3. GET /diagnostics/camera
 4. GET /diagnostics/face
+5. GET /diagnostics/embedding
 
 ## Dependances
 
@@ -173,8 +176,7 @@ A ce stade, le depot ne fait pas encore :
 
 1. la lecture du PIR
 2. la liveness
-3. la generation d'embedding
-4. l'appel API final de reconnaissance
-5. l'affichage local sur l'ecran de la pointeuse
+3. l'appel API final de reconnaissance
+4. l'affichage local sur l'ecran de la pointeuse
 
 Ce n'est pas un oubli. C'est un choix de sequence pour valider d'abord la base materielle et logicielle.

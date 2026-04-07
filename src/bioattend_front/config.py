@@ -36,6 +36,9 @@ class Settings:
     camera_backend: str
     camera_warmup_ms: int
     camera_read_attempts: int
+    insightface_model_name: str
+    insightface_det_width: int
+    insightface_det_height: int
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -48,6 +51,9 @@ class Settings:
             camera_backend=os.getenv("CAMERA_BACKEND", "auto").strip().lower(),
             camera_warmup_ms=_to_int(os.getenv("CAMERA_WARMUP_MS"), default=800),
             camera_read_attempts=_to_int(os.getenv("CAMERA_READ_ATTEMPTS"), default=10),
+            insightface_model_name=os.getenv("INSIGHTFACE_MODEL_NAME", "buffalo_l").strip(),
+            insightface_det_width=_to_int(os.getenv("INSIGHTFACE_DET_WIDTH"), default=640),
+            insightface_det_height=_to_int(os.getenv("INSIGHTFACE_DET_HEIGHT"), default=640),
         )
 
     def as_public_dict(self) -> dict[str, object]:
