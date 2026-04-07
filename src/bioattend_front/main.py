@@ -4,7 +4,7 @@ import cv2
 from flask import Flask, Response, jsonify
 
 from .api_client import identify_embedding
-from .camera import capture_frame, probe_camera
+from .camera import capture_frame, capture_frame_fast, probe_camera
 from .config import Settings
 from .embedding import generate_embedding
 from .face import detect_and_crop_face
@@ -277,12 +277,10 @@ def create_app() -> Flask:
 
     @app.get("/snapshot")
     def snapshot() -> object:
-        capture_result = capture_frame(settings)
+        capture_result = capture_frame_fast(settings)
         if not capture_result["ok"]:
             return ("", 503)
-        frame = capture_result.pop("frame")
-        if frame.ndim == 3 and frame.shape[2] == 4:
-            frame = cv2.cvtColor(frame, cv2.COLOR_BGRA2BGR)
+        frame = capture_result["frame"]
         _, jpeg = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 75])
         return Response(
             jpeg.tobytes(),
@@ -292,7 +290,7 @@ def create_app() -> Flask:
 
     @app.post("/pointage")
     def pointage() -> tuple[object, int]:
-        capture_result = capture_frame(settings)
+        capture_result = capture_frame_fast(settings)
         if not capture_result["ok"]:
             return jsonify({"ok": False, "matched": False, "error": "Capture échouée"}), 503
         frame = capture_result.pop("frame")

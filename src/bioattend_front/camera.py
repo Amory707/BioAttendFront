@@ -1,12 +1,49 @@
 from __future__ import annotations
 
 import platform
+import threading
 import time
 from typing import Any
 
 import cv2
 
 from .config import Settings
+
+_persistent_camera: Any = None
+_persistent_lock = threading.Lock()
+
+
+def _get_persistent_picamera2(settings: Settings) -> Any:
+    """Retourne l'instance Picamera2 persistante, l'ouvre si nécessaire."""
+    global _persistent_camera
+    if _persistent_camera is not None:
+        return _persistent_camera
+    with _persistent_lock:
+        if _persistent_camera is not None:
+            return _persistent_camera
+        from picamera2 import Picamera2
+        cam = Picamera2()
+        configuration = cam.create_preview_configuration(
+            main={"size": (settings.camera_width, settings.camera_height)}
+        )
+        cam.configure(configuration)
+        cam.start()
+        if settings.camera_warmup_ms > 0:
+            time.sleep(settings.camera_warmup_ms / 1000)
+        _persistent_camera = cam
+    return _persistent_camera
+
+
+def capture_frame_fast(settings: Settings) -> dict[str, Any]:
+    """Capture rapide depuis la caméra persistante (pas de warmup)."""
+    try:
+        cam = _get_persistent_picamera2(settings)
+        frame = cam.capture_array()
+        if frame is None or getattr(frame, "size", 0) == 0:
+            return {"ok": False, "error": "Frame vide"}
+        return {"ok": True, "frame": _normalize_frame(frame)}
+    except Exception as exc:
+        return {"ok": False, "error": str(exc)}
 
 
 def _resolve_device(camera_device: str) -> int | str:
