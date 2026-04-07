@@ -6,6 +6,7 @@ on:
   workflow_dispatch:
 
 permissions:
+  contents: read
   id-token: write
 
 jobs:
@@ -14,15 +15,18 @@ jobs:
     timeout-minutes: 25
     env:
       PI_HOST: ${{ secrets.PI_HOST }}
-      PI_USER: "pi"
+      PI_USER: "bioattend"
       TAILSCALE_AUTHKEY: ${{ secrets.TAILSCALE_AUTHKEY }}
       SSHPASS: ${{ secrets.PI_PASSWORD }}
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
+
+      - name: Install sshpass
+        run: sudo apt-get update && sudo apt-get install -y sshpass
 
       - name: Connect runner to Tailscale
-        uses: tailscale/github-action@v4 
+        uses: tailscale/github-action@v2 # v2 est la version stable recommandée
         with:
           authkey: ${{ env.TAILSCALE_AUTHKEY }}
 
@@ -35,39 +39,18 @@ jobs:
           echo "Test de ping vers ${PI_HOST}..."
           tailscale ping --c 1 "${PI_HOST}" || true
 
-      - name: Wait for Pi to be reachable via Tailscale
+      - name: Wait for Pi via SSH
         run: |
           set -euo pipefail
-          echo "Attente connectivité Tailscale vers ${PI_HOST}..."
-          MAX_ATTEMPTS=30
+          MAX_ATTEMPTS=15
           for i in $(seq 1 $MAX_ATTEMPTS); do
-            if timeout 5 tailscale ping --c 1 "${PI_HOST}" >/dev/null 2>&1; then
-              echo "✅ Pi joignable (tentative $i/$MAX_ATTEMPTS)"
+            if sshpass -e ssh -o StrictHostKeyChecking=no -o ConnectTimeout=45 "${PI_USER}@${PI_HOST}" "true" >/dev/null 2>&1; then
+              echo "✅ Pi joignable"
               exit 0
             fi
-            REMAINING=$((MAX_ATTEMPTS - i))
-            echo "⏳ Tentative $i/$MAX_ATTEMPTS - attente 2s... ($REMAINING restantes)"
-            sleep 2
+            sleep 5
           done
-          echo "❌ ERREUR: Pi Tailscale inaccessible après $((MAX_ATTEMPTS * 2))s"
-          echo "État Tailscale final:"
-          tailscale status || true
           exit 1
-
-      - name: Install sshpass
-        run: sudo apt-get update && sudo apt-get install -y sshpass
-
-      - name: Test SSH connectivity
-        run: |
-          set -euo pipefail
-          echo "Test de connectivité SSH..."
-          sshpass -e ssh -o StrictHostKeyChecking=no \
-            -o ConnectTimeout=10 \
-            -o BatchMode=yes \
-            "${PI_USER}@${PI_HOST}" "echo '✅ SSH OK' && uptime" || {
-            echo "❌ Erreur SSH"
-            exit 1
-          }
 
       - name: Create deploy directory on Raspberry Pi
         run: |
@@ -102,10 +85,10 @@ jobs:
           BRANCH="${{ github.ref_name }}"
           DEPLOY_PATH="/home/bioattend/${BRANCH}"
           echo "Installation des dépendances Python dans ${DEPLOY_PATH}..."
-          sshpass -e ssh -o StrictHostKeyChecking=no "${PI_USER}@${PI_HOST}" "DEPLOY_PATH=${DEPLOY_PATH}"' << 'EOF'
+          sshpass -e ssh -o StrictHostKeyChecking=no "${PI_USER}@${PI_HOST}" bash << EOF
             set -euo pipefail
-            cd "$DEPLOY_PATH"
-            echo "Répertoire actuel : $(pwd)"
+            cd "${DEPLOY_PATH}"
+            echo "Répertoire actuel : \$(pwd)"
             
             if [ ! -d venv ]; then
               echo "Création du venv..."
