@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from flask import Flask, jsonify
 
+from .api_client import identify_embedding
 from .camera import capture_frame, probe_camera
 from .config import Settings
 from .embedding import generate_embedding
@@ -85,6 +86,60 @@ def create_app() -> Flask:
             "camera": capture_result.get("camera"),
             "face": face_result,
             "embedding": embedding_result,
+            "platform": capture_result.get("platform"),
+        }
+
+        if response["ok"]:
+            return jsonify(response), 200
+        return jsonify(response), 503
+
+    @app.post("/diagnostics/identify")
+    @app.get("/diagnostics/identify")
+    def diagnostics_identify() -> tuple[object, int]:
+        capture_result = capture_frame(settings)
+        if not capture_result["ok"]:
+            capture_result.pop("frame", None)
+            return jsonify(capture_result), 503
+
+        frame = capture_result.pop("frame")
+        face_result = detect_and_crop_face(frame)
+        if not face_result.get("ok", False):
+            face_result.pop("face_crop", None)
+            response = {
+                "ok": False,
+                "camera": capture_result.get("camera"),
+                "face": face_result,
+                "platform": capture_result.get("platform"),
+            }
+            return jsonify(response), 422
+
+        face_crop = face_result.pop("face_crop")
+        embedding_result = generate_embedding(
+            frame=frame,
+            settings=settings,
+            target_bbox=face_result.get("primary_face"),
+            fallback_face_crop=face_crop,
+        )
+        if not embedding_result.get("ok", False):
+            embedding_result.pop("embedding", None)
+            response = {
+                "ok": False,
+                "camera": capture_result.get("camera"),
+                "face": face_result,
+                "embedding": embedding_result,
+                "platform": capture_result.get("platform"),
+            }
+            return jsonify(response), 503
+
+        embedding_vector = embedding_result.pop("embedding")
+        api_result = identify_embedding(embedding_vector, settings)
+
+        response = {
+            "ok": api_result.get("ok", False),
+            "camera": capture_result.get("camera"),
+            "face": face_result,
+            "embedding": embedding_result,
+            "api": api_result,
             "platform": capture_result.get("platform"),
         }
 

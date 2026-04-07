@@ -39,6 +39,9 @@ class Settings:
     insightface_model_name: str
     insightface_det_width: int
     insightface_det_height: int
+    server_url: str
+    api_token: str
+    api_timeout_seconds: int
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -54,7 +57,15 @@ class Settings:
             insightface_model_name=os.getenv("INSIGHTFACE_MODEL_NAME", "buffalo_l").strip(),
             insightface_det_width=_to_int(os.getenv("INSIGHTFACE_DET_WIDTH"), default=640),
             insightface_det_height=_to_int(os.getenv("INSIGHTFACE_DET_HEIGHT"), default=640),
+            server_url=os.getenv(
+                "SERVER_URL",
+                "https://bioattend.138.199.195.144.sslip.io/api/face/identify/",
+            ).strip(),
+            api_token=os.getenv("API_TOKEN", "").strip(),
+            api_timeout_seconds=_to_int(os.getenv("API_TIMEOUT_SECONDS"), default=8),
         )
 
     def as_public_dict(self) -> dict[str, object]:
-        return asdict(self)
+        payload = asdict(self)
+        payload["api_token"] = "***" if self.api_token else ""
+        return payload
