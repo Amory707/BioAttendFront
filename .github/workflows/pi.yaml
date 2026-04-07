@@ -1,0 +1,127 @@
+name: Deploy to Raspberry Pi
+on:
+  push:
+    branches:
+      - '**'
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      PI_HOST: ${{ secrets.PI_HOST }}
+      PI_USER: "pi"
+      TAILSCALE_AUTHKEY: ${{ secrets.TAILSCALE_AUTHKEY }}
+      SSHPASS: ${{ secrets.PI_PASSWORD }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Connect runner to Tailscale
+        uses: tailscale/github-action@v4 
+        with:
+          authkey: ${{ env.TAILSCALE_AUTHKEY }}
+
+      - name: Verify Tailscale connectivity
+        run: |
+          set -euo pipefail
+          echo "Statut Tailscale:"
+          tailscale status
+          echo ""
+          echo "Test de ping vers ${PI_HOST}..."
+          tailscale ping --c 1 "${PI_HOST}" || true
+
+      - name: Wait for Pi to be reachable via Tailscale
+        run: |
+          set -euo pipefail
+          echo "Attente connectivité Tailscale vers ${PI_HOST}..."
+          MAX_ATTEMPTS=30
+          for i in $(seq 1 $MAX_ATTEMPTS); do
+            if timeout 5 tailscale ping --c 1 "${PI_HOST}" >/dev/null 2>&1; then
+              echo "✅ Pi joignable (tentative $i/$MAX_ATTEMPTS)"
+              exit 0
+            fi
+            REMAINING=$((MAX_ATTEMPTS - i))
+            echo "⏳ Tentative $i/$MAX_ATTEMPTS - attente 2s... ($REMAINING restantes)"
+            sleep 2
+          done
+          echo "❌ ERREUR: Pi Tailscale inaccessible après $((MAX_ATTEMPTS * 2))s"
+          echo "État Tailscale final:"
+          tailscale status || true
+          exit 1
+
+      - name: Install sshpass
+        run: sudo apt-get update && sudo apt-get install -y sshpass
+
+      - name: Test SSH connectivity
+        run: |
+          set -euo pipefail
+          echo "Test de connectivité SSH..."
+          sshpass -e ssh -o StrictHostKeyChecking=no \
+            -o ConnectTimeout=10 \
+            -o BatchMode=yes \
+            "${PI_USER}@${PI_HOST}" "echo '✅ SSH OK' && uptime" || {
+            echo "❌ Erreur SSH"
+            exit 1
+          }
+
+      - name: Create deploy directory on Raspberry Pi
+        run: |
+          set -euo pipefail
+          BRANCH="${{ github.ref_name }}"
+          DEPLOY_PATH="/home/bioattend/${BRANCH}"
+          echo "Création du répertoire: ${DEPLOY_PATH}"
+          sshpass -e ssh -o StrictHostKeyChecking=no \
+            -o ConnectTimeout=10 \
+            "${PI_USER}@${PI_HOST}" "mkdir -p '${DEPLOY_PATH}' && ls -la /home/bioattend/"
+
+      - name: Sync files to Raspberry Pi
+        run: |
+          set -euo pipefail
+          BRANCH="${{ github.ref_name }}"
+          DEPLOY_PATH="/home/bioattend/${BRANCH}"
+          echo "Synchronisation vers: ${PI_USER}@${PI_HOST}:${DEPLOY_PATH}"
+          sshpass -e rsync -avz --delete \
+            --exclude ".git" \
+            --exclude ".github" \
+            --exclude "venv" \
+            --exclude "__pycache__" \
+            --exclude "*.pyc" \
+            --timeout=30 \
+            -e "ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10" \
+            ./ "${PI_USER}@${PI_HOST}:${DEPLOY_PATH}/"
+          echo "✅ Fichiers synchronisés"
+
+      - name: Install Python dependencies in branch venv
+        run: |
+          set -euo pipefail
+          BRANCH="${{ github.ref_name }}"
+          DEPLOY_PATH="/home/bioattend/${BRANCH}"
+          echo "Installation des dépendances Python dans ${DEPLOY_PATH}..."
+          
+          # On envoie la variable DEPLOY_PATH au shell distant
+          sshpass -e ssh -o StrictHostKeyChecking=no "${PI_USER}@${PI_HOST}" "DEPLOY_PATH=${DEPLOY_PATH}"' << 'EOF'
+            set -euo pipefail
+            cd "$DEPLOY_PATH"
+            echo "Répertoire actuel : $(pwd)"
+            
+            if [ ! -d venv ]; then
+              echo "Création du venv..."
+              python3 -m venv --system-site-packages venv
+            fi
+            
+            . venv/bin/activate
+            echo "Installation des requirements..."
+            if [ -f requirements.txt ]; then
+              pip install --upgrade pip setuptools wheel
+              pip install -r requirements.txt
+              echo "✅ Dépendances installées avec succès"
+            else
+              echo "⚠️ requirements.txt non trouvé"
+              exit 1
+            fi
+EOF
