@@ -22,8 +22,11 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v6
 
+      - name: Install sshpass
+        run: sudo apt-get update && sudo apt-get install -y sshpass
+
       - name: Connect runner to Tailscale
-        uses: tailscale/github-action@v4 
+        uses: tailscale/github-action@v2 # v2 est la version stable recommandée
         with:
           authkey: ${{ env.TAILSCALE_AUTHKEY }}
 
@@ -36,39 +39,21 @@ jobs:
           echo "Test de ping vers ${PI_HOST}..."
           tailscale ping --c 1 "${PI_HOST}" || true
 
-      - name: Wait for Pi to be reachable via Tailscale
+      - name: Wait for Pi via SSH
         run: |
           set -euo pipefail
-          echo "Attente connectivité Tailscale vers ${PI_HOST}..."
-          MAX_ATTEMPTS=30
+          echo "Attente de connectivité SSH vers ${PI_HOST}..."
+          MAX_ATTEMPTS=20
           for i in $(seq 1 $MAX_ATTEMPTS); do
-            if timeout 5 tailscale ping --c 1 "${PI_HOST}" >/dev/null 2>&1; then
-              echo "✅ Pi joignable (tentative $i/$MAX_ATTEMPTS)"
+            if sshpass -e ssh -o StrictHostKeyChecking=no -o ConnectTimeout=5 "${PI_USER}@${PI_HOST}" "true" >/dev/null 2>&1; then
+              echo "✅ Pi joignable en SSH (tentative $i/$MAX_ATTEMPTS)"
               exit 0
             fi
-            REMAINING=$((MAX_ATTEMPTS - i))
-            echo "⏳ Tentative $i/$MAX_ATTEMPTS - attente 2s... ($REMAINING restantes)"
-            sleep 2
+            echo "⏳ Tentative $i/$MAX_ATTEMPTS - attente 3s..."
+            sleep 3
           done
-          echo "❌ ERREUR: Pi Tailscale inaccessible après $((MAX_ATTEMPTS * 2))s"
-          echo "État Tailscale final:"
-          tailscale status || true
+          echo "❌ ERREUR: Impossible de joindre le Pi en SSH"
           exit 1
-
-      - name: Install sshpass
-        run: sudo apt-get update && sudo apt-get install -y sshpass
-
-      - name: Test SSH connectivity
-        run: |
-          set -euo pipefail
-          echo "Test de connectivité SSH..."
-          sshpass -e ssh -o StrictHostKeyChecking=no \
-            -o ConnectTimeout=10 \
-            -o BatchMode=yes \
-            "${PI_USER}@${PI_HOST}" "echo '✅ SSH OK' && uptime" || {
-            echo "❌ Erreur SSH"
-            exit 1
-          }
 
       - name: Create deploy directory on Raspberry Pi
         run: |
