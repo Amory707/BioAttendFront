@@ -64,8 +64,7 @@ def identify_embedding(embedding: list[float], settings: Settings) -> dict[str, 
             "error": f"API request failed: {exc}",
             "target": settings.server_url,
         }
-        if settings.debug:
-            result["auth_debug"] = auth_debug
+        result["auth_debug"] = auth_debug
         return result
 
     duration_ms = round((time.monotonic() - started_at) * 1000, 2)
@@ -82,6 +81,5 @@ def identify_embedding(embedding: list[float], settings: Settings) -> dict[str, 
         "target": settings.server_url,
         "response": body,
     }
-    if settings.debug:
-        result["auth_debug"] = auth_debug
+    result["auth_debug"] = auth_debug
     return result
