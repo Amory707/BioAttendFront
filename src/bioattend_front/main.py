@@ -72,7 +72,12 @@ def create_app() -> Flask:
             return jsonify(response), 422
 
         face_crop = face_result.pop("face_crop")
-        embedding_result = generate_embedding(face_crop, settings)
+        embedding_result = generate_embedding(
+            frame=frame,
+            settings=settings,
+            target_bbox=face_result.get("primary_face"),
+            fallback_face_crop=face_crop,
+        )
         embedding_result.pop("embedding", None)
 
         response = {
