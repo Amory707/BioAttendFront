@@ -8,8 +8,7 @@
             "installTools": true 
         }
     },
-
-    // Flask utilise généralement le port 5000
+    
     "forwardPorts": [5000],
 
     "customizations": {
@@ -18,7 +17,7 @@
                 "ms-python.python",
                 "ms-python.vscode-pylance",
                 "njpwerner.autodocstring",
-                "wholroyd.jinja" // Utile pour les templates HTML Flask
+                "wholroyd.jinja" 
             ],
             "settings": {
                 "python.defaultInterpreterPath": "${containerWorkspaceFolder}/.venv/bin/python",
