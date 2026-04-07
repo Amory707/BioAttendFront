@@ -82,4 +82,4 @@ def identify_embedding(embedding: list[float], settings: Settings) -> dict[str, 
         "response": body,
     }
     result["auth_debug"] = auth_debug
-    return result
+    return result 
