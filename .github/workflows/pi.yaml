@@ -42,17 +42,14 @@ jobs:
       - name: Wait for Pi via SSH
         run: |
           set -euo pipefail
-          echo "Attente de connectivité SSH vers ${PI_HOST}..."
-          MAX_ATTEMPTS=20
+          MAX_ATTEMPTS=15
           for i in $(seq 1 $MAX_ATTEMPTS); do
-            if sshpass -e ssh -o StrictHostKeyChecking=no -o ConnectTimeout=5 "${PI_USER}@${PI_HOST}" "true" >/dev/null 2>&1; then
-              echo "✅ Pi joignable en SSH (tentative $i/$MAX_ATTEMPTS)"
+            if sshpass -e ssh -o StrictHostKeyChecking=no -o ConnectTimeout=45 "${PI_USER}@${PI_HOST}" "true" >/dev/null 2>&1; then
+              echo "✅ Pi joignable"
               exit 0
             fi
-            echo "⏳ Tentative $i/$MAX_ATTEMPTS - attente 3s..."
-            sleep 3
+            sleep 5
           done
-          echo "❌ ERREUR: Impossible de joindre le Pi en SSH"
           exit 1
 
       - name: Create deploy directory on Raspberry Pi
