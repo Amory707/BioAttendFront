@@ -1,0 +1,41 @@
+{
+    "name": "BioAttend Flask Codespaces",
+    "image": "mcr.microsoft.com/devcontainers/base:ubuntu",
+    
+    "features": {
+        "ghcr.io/devcontainers/features/python:1": { 
+            "version": "3.12",
+            "installTools": true 
+        }
+    },
+
+    // Flask utilise généralement le port 5000
+    "forwardPorts": [5000],
+
+    "customizations": {
+        "vscode": {
+            "extensions": [
+                "ms-python.python",
+                "ms-python.vscode-pylance",
+                "njpwerner.autodocstring",
+                "wholroyd.jinja" // Utile pour les templates HTML Flask
+            ],
+            "settings": {
+                "python.defaultInterpreterPath": "${containerWorkspaceFolder}/.venv/bin/python",
+                "python.terminal.activateEnvInSelectedTerminal": true,
+                "python.terminal.useEnvFile": true
+            }
+        }
+    },
+
+    "postCreateCommand": "python3 -m venv .venv && ./.venv/bin/pip install --upgrade pip setuptools wheel && if [ -f requirements.txt ]; then ./.venv/bin/pip install -r requirements.txt; fi && printf 'SERVER_URL=%s\nAPI_TOKEN=%s\nDISTANCE_THRESHOLD=0.60\nEAR_THRESHOLD=0.25\nBLINK_COUNT_REQUIRED=1\nLIVENESS_TIMEOUT=5\nLED_DURATION=1.0\nGPIO_PIR=17\nGPIO_LED_GREEN=27\nGPIO_LED_RED=22\nGPIO_BUZZER=23\nCAMERA_WIDTH=1280\nCAMERA_HEIGHT=720\nDEBUG=True\nFLASK_APP=app.py\nFLASK_ENV=development\n' \"$SERVER_URL\" \"$API_TOKEN\" > .env",
+
+    "remoteUser": "vscode",
+    
+    "portsAttributes": {
+        "5000": {
+            "label": "Flask Server",
+            "onAutoForward": "notify"
+        }
+    }
+}
