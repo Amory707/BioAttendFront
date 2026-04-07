@@ -8,13 +8,35 @@ import requests
 from .config import Settings
 
 
+def _mask_token(token: str) -> str:
+    if not token:
+        return ""
+    if len(token) <= 8:
+        return "*" * len(token)
+    return f"{token[:4]}...{token[-4:]}"
+
+
 def identify_embedding(embedding: list[float], settings: Settings) -> dict[str, Any]:
     if not settings.server_url:
         return {"ok": False, "error": "SERVER_URL is empty."}
 
     headers: dict[str, str] = {"Content-Type": "application/json"}
+    auth_mode = "none"
     if settings.api_token:
-        headers["X-API-Key"] = settings.api_token
+        headers["Authorization"] = f"Bearer {settings.api_token}"
+        auth_mode = "bearer"
+
+    if settings.debug:
+        print(
+            "[identify_embedding] auth_mode=",
+            auth_mode,
+            "token_masked=",
+            _mask_token(settings.api_token),
+            "token_len=",
+            len(settings.api_token),
+            "target=",
+            settings.server_url,
+        )
 
     payload = {"embedding": embedding}
     started_at = time.monotonic()
