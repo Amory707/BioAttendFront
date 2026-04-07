@@ -14,7 +14,7 @@ def identify_embedding(embedding: list[float], settings: Settings) -> dict[str, 
 
     headers: dict[str, str] = {"Content-Type": "application/json"}
     if settings.api_token:
-        headers["Authorization"] = f"Token {settings.api_token}"
+        headers["Authorization"] = f"Bearer {settings.api_token}"
 
     payload = {"embedding": embedding}
     started_at = time.monotonic()
