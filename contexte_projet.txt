@@ -1,0 +1,108 @@
+📌 Contexte du projet
+Ce dépôt fait partie du projet Système de Pointage Automatique par Reconnaissance Faciale développé dans un cadre académique.
+L’objectif global est de créer une borne physique de pointage basée sur un Raspberry Pi, capable de :
+•	détecter la présence d’un utilisateur 
+•	capturer son visage 
+•	vérifier son identité via reconnaissance faciale 
+•	envoyer les données à une API distante 
+•	afficher un retour utilisateur en temps réel 
+Le système s’inscrit dans une architecture client (Raspberry Pi) → serveur (API Django + IA) 
+👉 Ce dépôt concerne UNIQUEMENT la partie embarquée (Raspberry Pi).
+________________________________________
+🎯 Objectif de ce dépôt
+Développer un script Python complet qui :
+•	gère le hardware (caméra + capteur PIR) 
+•	capture et traite le flux vidéo 
+•	prépare les données pour la reconnaissance faciale 
+•	communique avec l’API distante 
+•	fournit un retour utilisateur local 
+________________________________________
+⚙️ Contraintes importantes
+•	Respect strict du pipeline (aucune déviation) 
+•	Code optimisé pour Raspberry Pi (ressources limitées) 
+•	Temps de réponse rapide (< 2 secondes visé dans le projet global) 
+•	Aucune logique métier côté Raspberry (tout passe par l’API) 
+•	Ne jamais stocker d’images ou données sensibles localement 
+________________________________________
+🧱 1. Configuration matérielle (Hardware)
+Le Raspberry Pi est connecté à :
+•	une caméra (CSI recommandée) 
+•	un capteur PIR (détection de présence) 
+•	éventuellement un écran pour le feedback utilisateur 
+📌 Référence obligatoire : documentation officielle Raspberry Pi
+Commande utile :
+pinout
+Logique attendue :
+•	Si aucune présence détectée (PIR) → caméra en pause 
+•	Si présence détectée → activation du pipeline vidéo 
+👉 Objectif : économiser les ressources et éviter un traitement continu inutile
+________________________________________
+🔄 2. Pipeline de traitement (ordre STRICT)
+Le script doit exécuter les étapes suivantes dans cet ordre exact :
+1. Capture vidéo
+•	Utiliser OpenCV 
+•	Lire le flux caméra en temps réel 
+2. Détection et extraction du visage
+•	Détecter un visage dans l’image 
+•	Faire un crop propre du visage uniquement 
+3. Liveness detection (anti-spoofing)
+•	Vérifier que ce n’est PAS : 
+o	une photo 
+o	un écran 
+•	⚠️ Utiliser exclusivement le modèle fourni dans la partie IA (Raoul) 
+👉 Si échec → STOP pipeline + retour utilisateur
+4. Génération d’embedding
+•	Utiliser InsightFace 
+•	Transformer le visage en vecteur numérique 
+👉 Les embeddings sont utilisés car plus légers et plus respectueux du RGPD que les images 
+________________________________________
+🌐 3. Communication avec l’API
+Une fois l’embedding généré :
+Requête HTTP POST :
+http://bioattend.138.199.195.144.sslip.io/api/face/identify/
+Format :
+•	JSON ou multipart selon API 
+•	Contient l’embedding 
+Important :
+•	NE PAS utiliser localhost 
+•	API déjà déployée (cloud) 
+•	Se baser sur la documentation GitHub de l’API 
+Attendu :
+•	réception d’une réponse JSON avec : 
+o	identité (ou non) 
+o	statut (succès / échec) 
+o	type de pointage (entrée / sortie) 
+________________________________________
+🖥️ 4. Interface utilisateur locale (dernière priorité)
+Une interface simple doit être développée sur le Raspberry Pi pour afficher :
+L’utilisateur doit avoir un retour visuel de la caméra ainsi qu’un cercle pour qu’il puisse se positionner au mieux face à la caméra,
+Succès :
+•	Nom de la personne 
+•	Heure du pointage 
+Échec :
+•	Message d’erreur clair 
+Contraintes :
+•	Interface propre et lisible 
+•	Temps réel 
+•	Pas bloquante 
+👉 Cette partie dépend du retour API → à implémenter en dernier
+________________________________________
+🧪 Critères de validation
+
+🧠 Philosophie du projet
+•	Le Raspberry Pi = client léger 
+•	Toute l’intelligence lourde = API distante 
+•	Pipeline simple, robuste et séquentiel 
+•	Code modulaire et maintenable 
+________________________________________
+⚠️ Règles importantes pour l’IA
+•	Respecter STRICTEMENT l’ordre des étapes 
+•	Ne jamais inventer de logique métier 
+•	Ne jamais court-circuiter le pipeline 
+•	Toujours optimiser pour Raspberry Pi 
+•	Priorité : fiabilité > complexité 
+
+
+
+Mettre à jours les requirements si nouveaux packages 
++ on utilisera flask pour le platforme raspberry
