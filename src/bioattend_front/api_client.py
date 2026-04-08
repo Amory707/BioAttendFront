@@ -50,3 +50,4 @@ def identify_embedding(embedding: list[float], settings: Settings) -> dict[str, 
         "target": settings.server_url,
         "response": body,
     } 
+
