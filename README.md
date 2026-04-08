@@ -1,103 +1,192 @@
 # BioAttendFront
 
-Partie embarquee du projet BioAttend, executee sur Raspberry Pi.
+Partie embarquée du projet **BioAttend**, exécutée sur Raspberry Pi.
 
-Ce depot implemente un client leger charge de piloter le materiel, capturer une image exploitable, preparer les donnees pour la reconnaissance faciale et communiquer avec l'API distante. La logique metier reste cote serveur.
+Ce dépôt implémente un client léger chargé de piloter le matériel, capturer une image exploitable, préparer les données pour la reconnaissance faciale et communiquer avec l'API distante. **Toute la logique métier reste côté serveur.**
 
-## Objectif
+---
 
-Le Raspberry Pi doit a terme :
+## Vue d'ensemble du projet
 
-1. detecter une presence via un capteur PIR
-2. activer la capture camera uniquement quand c'est necessaire
-3. detecter et extraire le visage
-4. effectuer la liveness detection
-5. generer un embedding via InsightFace
-6. envoyer cet embedding a l'API distante
-7. afficher un retour utilisateur local
+Le système de pointage fonctionne selon l'architecture suivante :
 
-Le pipeline final doit rester strict et sequenciel.
+```
+Raspberry Pi (ce dépôt)  →  API distante (Django + IA)
+```
 
-## Principes de conception
+Le Raspberry Pi est responsable de :
 
-Les choix actuels suivent ces contraintes :
+1. Détecter une présence via un capteur PIR
+2. Activer la caméra uniquement quand nécessaire
+3. Détecter et extraire le visage
+4. Effectuer la liveness detection (anti-spoofing)
+5. Générer un embedding via InsightFace
+6. Envoyer cet embedding à l'API distante
+7. Afficher un retour utilisateur local (nom, heure, type de pointage)
 
-1. Raspberry Pi = client leger
-2. aucune logique metier locale
-3. aucune image stockee localement
-4. optimisation pour ressources limitees
-5. fiabilite avant sophistication
+---
 
-Consequence directe : on avance par petites etapes testables sur le Raspberry au lieu d'assembler tout le pipeline d'un coup.
+## Structure du dépôt
 
-## Pourquoi une approche incremental
+```
+app.py                          # Point d'entrée Flask
+requirements.txt                # Dépendances Python
+.env                            # Configuration locale (à créer, non versionné)
+src/
+  bioattend_front/
+    __init__.py                 # Fabrique de l'application Flask
+    config.py                   # Chargement de la config depuis .env
+    camera.py                   # Capture de frame (Picamera2 + OpenCV)
+    face.py                     # Détection et crop du visage
+    embedding.py                # Génération de l'embedding (InsightFace)
+    api_client.py               # Appel HTTP vers l'API distante
+    main.py                     # Routes Flask (interface + diagnostics)
+```
 
-Le projet melange materiel, capture video, traitements IA et communication reseau. Sur Raspberry Pi, si tout est integre en une seule fois, il devient difficile de savoir si une panne vient :
+---
 
-1. du capteur PIR
-2. de la camera
-3. de la pile logicielle Raspberry
-4. d'OpenCV ou du backend video
-5. du modele IA
-6. de l'API distante
+## Prérequis
 
-Le depot est donc construit pour valider chaque brique separement avant d'enchainer avec la suivante.
+- Python 3.10+
+- Sur Raspberry Pi : `libcamera` et `picamera2` installés via le système
+- Sur PC de développement : une webcam USB suffit pour tester
 
-## Choix techniques deja valides
+---
 
-### Flask pour la plateforme locale
+## Installation
 
-Flask est utilise comme couche locale minimale pour exposer des routes de diagnostic et de test.
+```bash
+git clone https://github.com/Nde-Code/BioAttendFront.git
+cd BioAttendFront
 
-Pourquoi ce choix :
+# Créer un environnement virtuel (recommandé)
+python3 -m venv .venv
+source .venv/bin/activate
 
-1. il est leger et simple a lancer sur Raspberry Pi
-2. il permet de tester chaque composant via HTTP sans interface graphique immediate
-3. il sert de socle pour les diagnostics, puis pour une future interface locale si necessaire
+# Installer les dépendances
+pip install -r requirements.txt
+```
 
-Etat actuel :
+> **Note Raspberry Pi :** `picamera2` s'installe via apt et non pip :
+> ```bash
+> sudo apt install python3-picamera2
+> ```
 
-1. une route de sante confirme que le service tourne
-2. une route de configuration expose les parametres non sensibles charges depuis l'environnement
-3. une route de diagnostic camera teste l'acquisition d'une frame en memoire
-4. une route de diagnostic visage teste detection + crop en memoire
-5. une route de diagnostic embedding teste la generation du vecteur
-6. une route de diagnostic identify teste l'appel API avec embedding
+---
 
-## Pourquoi Picamera2 pour la capture camera
+## Configuration — fichier `.env`
 
-Le cahier cible OpenCV pour le traitement du flux video, ce qui reste coherent pour les etapes de vision.
+Créer un fichier `.env` à la racine du projet. Ce fichier **ne doit jamais être versionné** (il est dans `.gitignore`).
 
-En revanche, sur Raspberry Pi avec une camera CSI, l'acquisition directe via OpenCV peut etre instable ou incomplete. C'est exactement ce qui a ete observe pendant les tests :
+```env
+# ── Mode debug Flask ──────────────────────────────────────────────
+DEBUG=false
 
-1. la camera est detectee par la pile Raspberry
-2. les devices video existent bien
-3. OpenCV ouvre le peripherique mais ne lit aucune frame exploitable
+# ── Caméra ───────────────────────────────────────────────────────
+CAMERA_WIDTH=1280
+CAMERA_HEIGHT=720
+CAMERA_DEVICE=0           # Index du device vidéo (ex: 0, 1…)
+CAMERA_SOURCE=auto        # "picamera2" sur Raspberry Pi, "opencv" sur PC, "auto" = détection automatique
+CAMERA_BACKEND=auto       # Backend OpenCV : "v4l2", "any", "auto"
+CAMERA_WARMUP_MS=800      # Temps de chauffe caméra en millisecondes
+CAMERA_READ_ATTEMPTS=10   # Nombre de tentatives de lecture de frame
 
-Picamera2 a donc ete introduit comme couche de capture prioritaire sur Raspberry, pour une raison precise : il s'appuie sur la pile camera native actuelle du Raspberry, basee sur libcamera.
+# ── InsightFace (génération d'embeddings) ─────────────────────────
+INSIGHTFACE_MODEL_NAME=buffalo_l
+INSIGHTFACE_DET_WIDTH=640
+INSIGHTFACE_DET_HEIGHT=640
 
-Cela signifie :
+# ── API distante ──────────────────────────────────────────────────
+SERVER_URL=https://bioattend.138.199.195.144.sslip.io/api/face/identify/
+API_TOKEN=votre_token_ici
+API_TIMEOUT_SECONDS=8
+```
 
-1. capture fiable de la frame via Picamera2
-2. traitement de cette frame ensuite avec OpenCV
-3. aucun changement de logique metier, uniquement une meilleure couche d'acces au materiel
+### Variables importantes
 
-Ce choix ne remplace donc pas OpenCV dans le projet. Il se limite a la partie acquisition, la plus sensible au materiel.
+| Variable | Description | Valeur conseillée |
+|---|---|---|
+| `CAMERA_SOURCE` | Source de capture | `picamera2` sur Raspberry Pi, `opencv` sur PC |
+| `API_TOKEN` | Token d'authentification de l'API | Récupérer auprès du responsable backend |
+| `SERVER_URL` | URL de l'endpoint d'identification | Ne pas modifier sauf changement de déploiement |
+| `DEBUG` | Active le mode debug Flask | `false` en production |
 
-## Resultat des tests camera
+---
 
-Le diagnostic camera a permis d'etablir les points suivants :
+## Lancer le serveur
 
-1. le service Flask demarre correctement sur le Raspberry Pi
-2. la camera est bien detectee par la stack Raspberry via libcamera
-3. l'acquisition via OpenCV seul n'etait pas fiable dans cette configuration
-4. l'acquisition via Picamera2 fonctionne et retourne une frame en memoire en 1280x720
+```bash
+# Activer l'environnement virtuel si ce n'est pas déjà fait
+source .venv/bin/activate
 
-Conclusion : la couche de capture camera est validee.
+# Lancer Flask
+python app.py
+```
 
-## Deploiement automatique vers le Raspberry Pi
+Le serveur démarre sur `http://0.0.0.0:5000`.
 
-Une GitHub Action est configuree pour deployer automatiquement le depot sur le Raspberry Pi a chaque push.
+- Sur Raspberry Pi : accessible depuis un navigateur sur le même réseau à `http://<ip-du-raspberry>:5000`
+- Sur PC : ouvrir `http://localhost:5000`
+
+---
+
+## Interface utilisateur
+
+La page principale (`/`) affiche :
+
+- Le flux de la caméra en temps réel avec un ovale de cadrage
+- Un bouton **Pointer** (ou touche `Espace`) pour déclencher l'identification
+- Un retour visuel : **vert** si reconnu (nom + heure + type de pointage), **rouge** sinon
+
+---
+
+## Routes de diagnostic
+
+Ces routes permettent de tester chaque brique du pipeline de façon isolée. Utiles pour déboguer.
+
+| Méthode | Route | Description |
+|---|---|---|
+| `GET` | `/health` | Vérifie que le service tourne |
+| `GET` | `/config` | Affiche la configuration active (token masqué) |
+| `GET` | `/diagnostics/camera` | Teste la capture d'une frame |
+| `GET` | `/diagnostics/face` | Teste la détection + crop du visage |
+| `GET` | `/diagnostics/embedding` | Teste la génération du vecteur |
+| `GET/POST` | `/diagnostics/identify` | Teste le pipeline complet jusqu'à l'appel API |
+| `GET` | `/snapshot` | Retourne une frame JPEG brute (utilisé par l'UI) |
+| `POST` | `/pointage` | Déclenche un pointage complet |
+
+---
+
+## Philosophie de développement
+
+Le projet est bâti de façon **incrémentale** : chaque brique est validée séparément avant d'être intégrée au pipeline. Sur Raspberry Pi, si tout est assemblé d'un coup, il devient très difficile de savoir d'où vient une panne (matériel, caméra, modèle IA, réseau…).
+
+**Règles à respecter :**
+
+- Le Raspberry Pi est un **client léger** : aucune logique métier locale
+- **Aucune image ne doit être stockée** sur le disque (respect RGPD)
+- Le pipeline d'identification est **séquentiel et strict** : PIR → caméra → visage → liveness → embedding → API → affichage
+- Avancer par petites étapes testables via les routes `/diagnostics/*`
+
+---
+
+## Choix techniques
+
+### Picamera2 pour la capture
+
+Sur Raspberry Pi avec caméra CSI, OpenCV seul n'est pas fiable (la caméra est détectée mais aucune frame exploitable n'est retournée). **Picamera2** s'appuie sur la pile libcamera native du Raspberry et permet une capture fiable. OpenCV prend ensuite le relais for le traitement.
+
+Sur PC de développement, `CAMERA_SOURCE=opencv` utilise directement OpenCV avec la webcam.
+
+### InsightFace pour les embeddings
+
+InsightFace transforme le visage en un vecteur numérique (embedding). C'est ce vecteur, et non l'image, qui est envoyé à l'API — plus léger et plus respectueux de la vie privée.
+
+---
+
+## Déploiement automatique
+
+Une GitHub Action déploie automatiquement le dépôt sur le Raspberry Pi cible à chaque push sur la branche `main`.
 
 Le workflow :
 
