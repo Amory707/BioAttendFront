@@ -595,7 +595,11 @@ def create_app() -> Flask:
         if not capture_result["ok"]:
             return ("", 503)
         frame = capture_result["frame"]
-      _, jpeg = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, settings.camera_jpeg_quality])
+      _, jpeg = cv2.imencode(
+        ".jpg",
+        frame,
+        [cv2.IMWRITE_JPEG_QUALITY, settings.camera_jpeg_quality],
+      )
         return Response(
             jpeg.tobytes(),
             mimetype="image/jpeg",
