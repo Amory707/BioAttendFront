@@ -106,3 +106,70 @@ jobs:
               exit 1
             fi
           EOF
+
+      - name: Start app automatically on Raspberry Pi
+        run: |
+          set -euo pipefail
+          BRANCH="${{ github.ref_name }}"
+          DEPLOY_PATH="/home/bioattend/${BRANCH}"
+          echo "Démarrage automatique de l'application depuis ${DEPLOY_PATH}..."
+          sshpass -e ssh -o StrictHostKeyChecking=no "${PI_USER}@${PI_HOST}" bash << EOF
+            set -euo pipefail
+            BRANCH="${BRANCH}"
+            DEPLOY_PATH="${DEPLOY_PATH}"
+            BRANCH_SLUG="$(printf '%s' "${BRANCH}" | tr '/ ' '__')"
+            LOG_DIR="/home/bioattend/.bioattend"
+            APP_LOG="${LOG_DIR}/app-${BRANCH_SLUG}.log"
+            PID_FILE="${LOG_DIR}/app-${BRANCH_SLUG}.pid"
+
+            mkdir -p "${LOG_DIR}"
+            cd "${DEPLOY_PATH}"
+
+            if [ ! -f app.py ]; then
+              echo "❌ app.py introuvable dans ${DEPLOY_PATH}"
+              exit 1
+            fi
+
+            if [ -f "${PID_FILE}" ] && kill -0 "$(cat "${PID_FILE}")" 2>/dev/null; then
+              kill "$(cat "${PID_FILE}")" || true
+              sleep 1
+            fi
+
+            # Coupe un ancien serveur Flask lié à cette app pour éviter les conflits de port.
+            pkill -f "python -m flask --app app run --host 0.0.0.0 --port 5000" || true
+
+            nohup "${DEPLOY_PATH}/venv/bin/python" -m flask --app app run --host 0.0.0.0 --port 5000 > "${APP_LOG}" 2>&1 &
+            echo $! > "${PID_FILE}"
+            sleep 3
+
+            if curl -fsS "http://127.0.0.1:5000/health" >/dev/null; then
+              echo "✅ Application démarrée et endpoint /health joignable"
+            else
+              echo "❌ L'application ne répond pas sur le port 5000"
+              echo "--- Dernières logs ---"
+              tail -n 80 "${APP_LOG}" || true
+              exit 1
+            fi
+          EOF
+
+      - name: Configure kiosk autostart on Raspberry Pi
+        run: |
+          set -euo pipefail
+          echo "Configuration du mode kiosk au démarrage de session graphique..."
+          sshpass -e ssh -o StrictHostKeyChecking=no "${PI_USER}@${PI_HOST}" bash << 'EOF'
+            set -euo pipefail
+            AUTOSTART_DIR="/home/bioattend/.config/lxsession/LXDE-pi"
+            AUTOSTART_FILE="${AUTOSTART_DIR}/autostart"
+
+            mkdir -p "${AUTOSTART_DIR}"
+
+            cat > "${AUTOSTART_FILE}" << 'AUTOEOF'
+@xset s off
+@xset -dpms
+@xset s noblank
+@bash -lc 'pkill -x unclutter >/dev/null 2>&1 || true; command -v unclutter >/dev/null 2>&1 && unclutter -idle 0 -root &'
+@bash -lc 'sleep 6; BROWSER="$(command -v chromium || command -v chromium-browser || true)"; if [ -n "$BROWSER" ]; then pkill -f "chromium.*--app=http://localhost:5000" >/dev/null 2>&1 || true; "$BROWSER" --kiosk --app=http://localhost:5000 --noerrdialogs --disable-infobars; fi'
+AUTOEOF
+
+            echo "✅ Fichier autostart kiosk mis à jour: ${AUTOSTART_FILE}"
+          EOF
