@@ -15,6 +15,11 @@ _persistent_camera: Any = None
 _persistent_lock = threading.Lock()
 
 
+def _picamera_frame_format() -> str:
+    # BGR888 aligne directement la sortie Picamera2 avec OpenCV.
+    return "BGR888"
+
+
 def _load_picamera2_class() -> type[Any]:
     module = importlib.import_module("picamera2")
     return module.Picamera2
@@ -33,7 +38,7 @@ def _get_persistent_picamera2(settings: Settings) -> Any:
         configuration = cam.create_preview_configuration(
             main={
                 "size": (settings.camera_width, settings.camera_height),
-                "format": "RGB888",
+                "format": _picamera_frame_format(),
             }
         )
         cam.configure(configuration)
@@ -92,9 +97,6 @@ def _normalize_frame(frame: Any, source: str, settings: Settings) -> Any:
     if hasattr(frame, "ndim") and frame.ndim == 3:
         if frame.shape[2] == 4:
             frame = cv2.cvtColor(frame, cv2.COLOR_BGRA2BGR)
-        elif frame.shape[2] == 3 and source == "picamera2":
-            # Picamera2 livre généralement du RGB; le pipeline OpenCV attend du BGR.
-            frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
 
     return frame
 
@@ -127,7 +129,7 @@ def _probe_camera_picamera2(settings: Settings) -> dict[str, Any]:
         configuration = camera.create_preview_configuration(
             main={
                 "size": (settings.camera_width, settings.camera_height),
-                "format": "RGB888",
+                "format": _picamera_frame_format(),
             }
         )
         camera.configure(configuration)
