@@ -160,16 +160,53 @@ jobs:
             set -euo pipefail
             AUTOSTART_DIR="/home/bioattend/.config/lxsession/LXDE-pi"
             AUTOSTART_FILE="${AUTOSTART_DIR}/autostart"
+            BIN_DIR="/home/bioattend/.local/bin"
+            KIOSK_SCRIPT="${BIN_DIR}/bioattend-kiosk.sh"
 
             mkdir -p "${AUTOSTART_DIR}"
+            mkdir -p "${BIN_DIR}"
+
+            cat > "${KIOSK_SCRIPT}" << 'SCRIPT'
+#!/usr/bin/env bash
+set -u
+
+LOG_DIR="/home/bioattend/.bioattend"
+LOG_FILE="${LOG_DIR}/kiosk.log"
+mkdir -p "${LOG_DIR}"
+exec >> "${LOG_FILE}" 2>&1
+
+echo "[$(date '+%Y-%m-%d %H:%M:%S')] kiosk start"
+
+# Laisse la session graphique se stabiliser et l'app Flask démarrer.
+sleep 8
+
+for _ in $(seq 1 30); do
+  if curl -fsS "http://127.0.0.1:5000/health" >/dev/null 2>&1; then
+    break
+  fi
+  sleep 1
+done
+
+BROWSER="$(command -v chromium || command -v chromium-browser || true)"
+if [ -z "${BROWSER}" ]; then
+  echo "Chromium introuvable"
+  exit 0
+fi
+
+pkill -f "chromium.*--app=http://localhost:5000" >/dev/null 2>&1 || true
+"${BROWSER}" --kiosk --app=http://localhost:5000 --noerrdialogs --disable-infobars
+SCRIPT
+
+            chmod +x "${KIOSK_SCRIPT}"
 
             {
               echo "@xset s off"
               echo "@xset -dpms"
               echo "@xset s noblank"
               echo "@bash -lc 'pkill -x unclutter >/dev/null 2>&1 || true; command -v unclutter >/dev/null 2>&1 && unclutter -idle 0 -root &'"
-              echo "@bash -lc 'sleep 6; BROWSER=\"\$(command -v chromium || command -v chromium-browser || true)\"; if [ -n \"\$BROWSER\" ]; then pkill -f \"chromium.*--app=http://localhost:5000\" >/dev/null 2>&1 || true; \"\$BROWSER\" --kiosk --app=http://localhost:5000 --noerrdialogs --disable-infobars; fi'"
+              echo "@${KIOSK_SCRIPT}"
             } > "${AUTOSTART_FILE}"
 
             echo "✅ Fichier autostart kiosk mis à jour: ${AUTOSTART_FILE}"
+            echo "✅ Script kiosk généré: ${KIOSK_SCRIPT}"
           EOF
