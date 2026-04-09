@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import importlib
 import platform
 import threading
 import time
@@ -14,6 +15,11 @@ _persistent_camera: Any = None
 _persistent_lock = threading.Lock()
 
 
+def _load_picamera2_class() -> type[Any]:
+    module = importlib.import_module("picamera2")
+    return module.Picamera2
+
+
 def _get_persistent_picamera2(settings: Settings) -> Any:
     """Retourne l'instance Picamera2 persistante, l'ouvre si nécessaire."""
     global _persistent_camera
@@ -22,7 +28,7 @@ def _get_persistent_picamera2(settings: Settings) -> Any:
     with _persistent_lock:
         if _persistent_camera is not None:
             return _persistent_camera
-        from picamera2 import Picamera2
+        Picamera2 = _load_picamera2_class()
         cam = Picamera2()
         configuration = cam.create_preview_configuration(
             main={
@@ -107,7 +113,7 @@ def _probe_camera_picamera2(settings: Settings) -> dict[str, Any]:
     }
 
     try:
-        from picamera2 import Picamera2
+        Picamera2 = _load_picamera2_class()
     except Exception as exc:
         attempt["opened"] = False
         attempt["read_ok"] = False
