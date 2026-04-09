@@ -31,6 +31,7 @@ class Settings:
     debug: bool
     kiosk_mode: bool
     camera_mirror: bool
+    camera_swap_rb: bool
     camera_jpeg_quality: int
     camera_width: int
     camera_height: int
@@ -52,6 +53,7 @@ class Settings:
             debug=_to_bool(os.getenv("DEBUG"), default=False),
             kiosk_mode=_to_bool(os.getenv("KIOSK_MODE"), default=True),
             camera_mirror=_to_bool(os.getenv("CAMERA_MIRROR"), default=True),
+            camera_swap_rb=_to_bool(os.getenv("CAMERA_SWAP_RB"), default=False),
             camera_jpeg_quality=max(40, min(95, _to_int(os.getenv("CAMERA_JPEG_QUALITY"), default=68))),
             camera_width=_to_int(os.getenv("CAMERA_WIDTH"), default=1280),
             camera_height=_to_int(os.getenv("CAMERA_HEIGHT"), default=720),

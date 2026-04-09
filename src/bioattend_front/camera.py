@@ -97,6 +97,8 @@ def _normalize_frame(frame: Any, source: str, settings: Settings) -> Any:
     if hasattr(frame, "ndim") and frame.ndim == 3:
         if frame.shape[2] == 4:
             frame = cv2.cvtColor(frame, cv2.COLOR_BGRA2BGR)
+        elif frame.shape[2] == 3 and settings.camera_swap_rb:
+            frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
 
     return frame
 
