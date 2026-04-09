@@ -9,6 +9,7 @@ import cv2
 
 from .config import Settings
 
+
 _persistent_camera: Any = None
 _persistent_lock = threading.Lock()
 
