@@ -166,36 +166,36 @@ jobs:
             mkdir -p "${AUTOSTART_DIR}"
             mkdir -p "${BIN_DIR}"
 
-            cat > "${KIOSK_SCRIPT}" << 'SCRIPT'
-#!/usr/bin/env bash
-set -u
-
-LOG_DIR="/home/bioattend/.bioattend"
-LOG_FILE="${LOG_DIR}/kiosk.log"
-mkdir -p "${LOG_DIR}"
-exec >> "${LOG_FILE}" 2>&1
-
-echo "[$(date '+%Y-%m-%d %H:%M:%S')] kiosk start"
-
-# Laisse la session graphique se stabiliser et l'app Flask démarrer.
-sleep 8
-
-for _ in $(seq 1 30); do
-  if curl -fsS "http://127.0.0.1:5000/health" >/dev/null 2>&1; then
-    break
-  fi
-  sleep 1
-done
-
-BROWSER="$(command -v chromium || command -v chromium-browser || true)"
-if [ -z "${BROWSER}" ]; then
-  echo "Chromium introuvable"
-  exit 0
-fi
-
-pkill -f "chromium.*--app=http://localhost:5000" >/dev/null 2>&1 || true
-"${BROWSER}" --kiosk --app=http://localhost:5000 --noerrdialogs --disable-infobars
-SCRIPT
+            {
+              echo '#!/usr/bin/env bash'
+              echo 'set -u'
+              echo ''
+              echo 'LOG_DIR="/home/bioattend/.bioattend"'
+              echo 'LOG_FILE="${LOG_DIR}/kiosk.log"'
+              echo 'mkdir -p "${LOG_DIR}"'
+              echo 'exec >> "${LOG_FILE}" 2>&1'
+              echo ''
+              echo 'echo "[$(date '+"'"'%Y-%m-%d %H:%M:%S'"'"')] kiosk start"'
+              echo ''
+              echo '# Laisse la session graphique se stabiliser et l app Flask demarrer.'
+              echo 'sleep 8'
+              echo ''
+              echo 'for _ in $(seq 1 30); do'
+              echo '  if curl -fsS "http://127.0.0.1:5000/health" >/dev/null 2>&1; then'
+              echo '    break'
+              echo '  fi'
+              echo '  sleep 1'
+              echo 'done'
+              echo ''
+              echo 'BROWSER="$(command -v chromium || command -v chromium-browser || true)"'
+              echo 'if [ -z "${BROWSER}" ]; then'
+              echo '  echo "Chromium introuvable"'
+              echo '  exit 0'
+              echo 'fi'
+              echo ''
+              echo 'pkill -f "chromium.*--app=http://localhost:5000" >/dev/null 2>&1 || true'
+              echo '"${BROWSER}" --kiosk --app=http://localhost:5000 --noerrdialogs --disable-infobars'
+            } > "${KIOSK_SCRIPT}"
 
             chmod +x "${KIOSK_SCRIPT}"
 
