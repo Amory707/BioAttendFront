@@ -113,7 +113,7 @@ jobs:
           BRANCH="${{ github.ref_name }}"
           DEPLOY_PATH="/home/bioattend/${BRANCH}"
           echo "Démarrage automatique de l'application depuis ${DEPLOY_PATH}..."
-          sshpass -e ssh -o StrictHostKeyChecking=no "${PI_USER}@${PI_HOST}" bash << EOF
+          sshpass -e ssh -o StrictHostKeyChecking=no "${PI_USER}@${PI_HOST}" "BRANCH='${BRANCH}' DEPLOY_PATH='${DEPLOY_PATH}' bash -s" << 'EOF'
             set -euo pipefail
             BRANCH="${BRANCH}"
             DEPLOY_PATH="${DEPLOY_PATH}"
