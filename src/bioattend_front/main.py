@@ -312,6 +312,7 @@ _UI_HTML = """\
     var clock = document.getElementById('clock');
     var kioskHint = document.getElementById('kioskHint');
     var KIOSK_MODE = __KIOSK_MODE__;
+    var CAMERA_MIRROR = __CAMERA_MIRROR__;
 
     var streamRunning = false;
     var streamTimer = null;
@@ -338,7 +339,7 @@ _UI_HTML = """\
         return;
       }
       streamRunning = true;
-      scheduleNextFrame(10);
+      scheduleNextFrame(0);
     }
 
     function stopStream() {
@@ -348,11 +349,11 @@ _UI_HTML = """\
     }
 
     feed.addEventListener('load', function() {
-      scheduleNextFrame(140);
+      scheduleNextFrame(90);
     });
 
     feed.addEventListener('error', function() {
-      scheduleNextFrame(260);
+      scheduleNextFrame(180);
     });
 
     function updateClock() {
@@ -428,6 +429,10 @@ _UI_HTML = """\
         enterFullscreen();
         document.removeEventListener('keydown', autoKioskKey);
       }, { once: true });
+    }
+
+    if (CAMERA_MIRROR) {
+      feed.style.transform = 'scaleX(-1)';
     }
 
     updateClock();
@@ -579,8 +584,10 @@ def create_app() -> Flask:
 
     @app.get("/")
     def index() -> tuple[str, int, dict[str, str]]:
-      html = _UI_HTML.replace("__KIOSK_MODE__", "true" if settings.kiosk_mode else "false")
-      return html, 200, {"Content-Type": "text/html; charset=utf-8"}
+        html = _UI_HTML
+        html = html.replace("__KIOSK_MODE__", "true" if settings.kiosk_mode else "false")
+        html = html.replace("__CAMERA_MIRROR__", "true" if settings.camera_mirror else "false")
+        return html, 200, {"Content-Type": "text/html; charset=utf-8"}
 
     @app.get("/snapshot")
     def snapshot() -> object:
@@ -588,7 +595,7 @@ def create_app() -> Flask:
         if not capture_result["ok"]:
             return ("", 503)
         frame = capture_result["frame"]
-        _, jpeg = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 75])
+      _, jpeg = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, settings.camera_jpeg_quality])
         return Response(
             jpeg.tobytes(),
             mimetype="image/jpeg",

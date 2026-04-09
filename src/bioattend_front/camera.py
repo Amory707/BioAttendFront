@@ -24,7 +24,10 @@ def _get_persistent_picamera2(settings: Settings) -> Any:
         from picamera2 import Picamera2
         cam = Picamera2()
         configuration = cam.create_preview_configuration(
-            main={"size": (settings.camera_width, settings.camera_height)}
+            main={
+                "size": (settings.camera_width, settings.camera_height),
+                "format": "RGB888",
+            }
         )
         cam.configure(configuration)
         cam.start()
@@ -41,7 +44,7 @@ def capture_frame_fast(settings: Settings) -> dict[str, Any]:
         frame = cam.capture_array()
         if frame is None or getattr(frame, "size", 0) == 0:
             return {"ok": False, "error": "Frame vide"}
-        return {"ok": True, "frame": _normalize_frame(frame)}
+        return {"ok": True, "frame": _normalize_frame(frame, "picamera2", settings)}
     except Exception as exc:
         return {"ok": False, "error": str(exc)}
 
@@ -76,11 +79,16 @@ def _resolve_sources(settings: Settings) -> list[str]:
     return ["opencv", "picamera2"]
 
 
-def _normalize_frame(frame: Any) -> Any:
+def _normalize_frame(frame: Any, source: str, settings: Settings) -> Any:
     if frame is None:
         return None
-    if hasattr(frame, "ndim") and frame.ndim == 3 and frame.shape[2] == 4:
-        return cv2.cvtColor(frame, cv2.COLOR_BGRA2BGR)
+    if hasattr(frame, "ndim") and frame.ndim == 3:
+        if frame.shape[2] == 4:
+            frame = cv2.cvtColor(frame, cv2.COLOR_BGRA2BGR)
+        elif frame.shape[2] == 3 and source == "picamera2":
+            # Picamera2 livre généralement du RGB; le pipeline OpenCV attend du BGR.
+            frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+
     return frame
 
 
@@ -110,7 +118,10 @@ def _probe_camera_picamera2(settings: Settings) -> dict[str, Any]:
         started_at = time.monotonic()
         camera = Picamera2()
         configuration = camera.create_preview_configuration(
-            main={"size": (settings.camera_width, settings.camera_height)}
+            main={
+                "size": (settings.camera_width, settings.camera_height),
+                "format": "RGB888",
+            }
         )
         camera.configure(configuration)
         camera.start()
@@ -141,7 +152,7 @@ def _probe_camera_picamera2(settings: Settings) -> dict[str, Any]:
                 return {
                     "ok": True,
                     "camera": attempt,
-                    "frame": _normalize_frame(frame),
+                    "frame": _normalize_frame(frame, "picamera2", settings),
                     "platform": platform.platform(),
                     "note": "Camera opened and a frame was captured in memory.",
                 }
@@ -222,7 +233,7 @@ def _probe_camera_opencv(settings: Settings) -> dict[str, Any]:
             attempt["read_attempts"] = read_attempts
 
             if read_ok and frame is not None:
-                frame = _normalize_frame(frame)
+                frame = _normalize_frame(frame, "opencv", settings)
                 height, width = frame.shape[:2]
                 attempt["frame_shape"] = [int(height), int(width)]
                 attempt["pixel_format_channels"] = int(frame.shape[2]) if len(frame.shape) == 3 else 1

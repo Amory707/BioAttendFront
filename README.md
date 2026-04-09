@@ -86,6 +86,8 @@ KIOSK_MODE=true          # Active l'UI borne plein écran
 # ── Caméra ───────────────────────────────────────────────────────
 CAMERA_WIDTH=1280
 CAMERA_HEIGHT=720
+CAMERA_MIRROR=true       # Inverse horizontalement l'image (effet miroir)
+CAMERA_JPEG_QUALITY=68   # 40-95: plus bas = plus fluide, plus haut = meilleure qualite
 CAMERA_DEVICE=0           # Index du device vidéo (ex: 0, 1…)
 CAMERA_SOURCE=auto        # "picamera2" sur Raspberry Pi, "opencv" sur PC, "auto" = détection automatique
 CAMERA_BACKEND=auto       # Backend OpenCV : "v4l2", "any", "auto"
@@ -108,6 +110,8 @@ API_TIMEOUT_SECONDS=8
 | Variable | Description | Valeur conseillée |
 |---|---|---|
 | `CAMERA_SOURCE` | Source de capture | `picamera2` sur Raspberry Pi, `opencv` sur PC |
+| `CAMERA_MIRROR` | Active l'effet miroir horizontal | `true` pour cadrage type selfie, `false` pour image réelle |
+| `CAMERA_JPEG_QUALITY` | Qualité JPEG du flux live | `60-70` sur Raspberry Pi pour plus de fluidité |
 | `API_TOKEN` | Token d'authentification de l'API | Récupérer auprès du responsable backend |
 | `SERVER_URL` | URL de l'endpoint d'identification | Ne pas modifier sauf changement de déploiement |
 | `DEBUG` | Active le mode debug Flask | `false` en production |
