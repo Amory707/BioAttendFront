@@ -15,118 +15,412 @@ _UI_HTML = """\
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>BioAttend</title>
+  <title>BioAttend | Station de pointage</title>
   <style>
-    * { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg-a: #0d1a23;
+      --bg-b: #071018;
+      --panel: rgba(4, 12, 18, 0.76);
+      --line: rgba(255, 255, 255, 0.18);
+      --text: #ecf4f7;
+      --muted: #a8bdc8;
+      --accent: #18a5b2;
+      --accent-strong: #0f8792;
+      --ok: #3ad17c;
+      --bad: #ff6d6d;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    html,
     body {
-      background: #0d0d0d; color: #fff;
-      font-family: 'Segoe UI', Arial, sans-serif;
-      display: flex; flex-direction: column;
-      align-items: center; justify-content: center;
-      min-height: 100vh; gap: 20px;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
     }
-    h1 { font-size: 1.3em; letter-spacing: 6px; color: #888; text-transform: uppercase; }
-    .camera-wrap { position: relative; width: 640px; height: 360px; }
+
+    body {
+      background:
+        radial-gradient(1000px 500px at 82% -10%, rgba(24, 165, 178, 0.18), transparent 60%),
+        radial-gradient(820px 420px at -5% 102%, rgba(58, 209, 124, 0.12), transparent 60%),
+        linear-gradient(155deg, var(--bg-a), var(--bg-b));
+      color: var(--text);
+      font-family: "Segoe UI", "Noto Sans", sans-serif;
+      user-select: none;
+    }
+
+    .screen {
+      width: 100vw;
+      height: 100dvh;
+      padding: clamp(12px, 2.3vw, 28px);
+      display: grid;
+      grid-template-rows: auto 1fr auto;
+      gap: clamp(10px, 1.6vw, 20px);
+    }
+
+    .topbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 14px;
+    }
+
+    .brand {
+      font-size: clamp(1.02rem, 2vw, 1.5rem);
+      font-weight: 700;
+      letter-spacing: 0.22em;
+      text-transform: uppercase;
+      color: #d4e7ee;
+      opacity: 0.95;
+    }
+
+    .clock {
+      font-variant-numeric: tabular-nums;
+      color: var(--muted);
+      font-size: clamp(0.96rem, 1.6vw, 1.15rem);
+      text-align: right;
+    }
+
+    .main {
+      min-height: 0;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(250px, 28vw);
+      gap: clamp(10px, 1.8vw, 20px);
+    }
+
+    .camera-card {
+      position: relative;
+      border-radius: 24px;
+      overflow: hidden;
+      border: 1px solid var(--line);
+      background: #05090d;
+      min-height: 0;
+    }
+
     #feed {
-      width: 100%; height: 100%; object-fit: cover;
-      border-radius: 12px; display: block; background: #111;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+      background: #000;
     }
-    .oval {
-      position: absolute; top: 50%; left: 50%;
-      width: 220px; height: 290px;
-      transform: translate(-50%, -58%);
-      border: 3px solid rgba(255,255,255,0.55);
-      border-radius: 50%; pointer-events: none;
-      transition: border-color 0.4s, box-shadow 0.4s;
+
+    .scan-oval {
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      width: clamp(220px, 28vw, 360px);
+      aspect-ratio: 0.76;
+      transform: translate(-50%, -56%);
+      border: 4px solid rgba(255, 255, 255, 0.62);
+      border-radius: 50%;
+      pointer-events: none;
+      box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.2) inset;
+      transition: border-color 0.25s ease, box-shadow 0.25s ease;
     }
-    .oval.success { border-color: #4CAF50; box-shadow: 0 0 24px rgba(76,175,80,0.5); }
-    .oval.error   { border-color: #f44336; box-shadow: 0 0 24px rgba(244,67,54,0.4); }
+
+    .scan-oval.success {
+      border-color: var(--ok);
+      box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.13) inset, 0 0 38px rgba(58, 209, 124, 0.35);
+    }
+
+    .scan-oval.error {
+      border-color: var(--bad);
+      box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.18) inset, 0 0 36px rgba(255, 109, 109, 0.32);
+    }
+
+    .guide {
+      position: absolute;
+      bottom: 16px;
+      left: 50%;
+      transform: translateX(-50%);
+      padding: 8px 14px;
+      border-radius: 999px;
+      font-size: 0.9rem;
+      color: #dbe8ee;
+      background: rgba(4, 10, 16, 0.52);
+      border: 1px solid rgba(255, 255, 255, 0.18);
+      backdrop-filter: blur(4px);
+    }
+
+    .side {
+      border-radius: 20px;
+      border: 1px solid var(--line);
+      background: var(--panel);
+      backdrop-filter: blur(8px);
+      padding: clamp(14px, 2vw, 20px);
+      display: grid;
+      grid-template-rows: auto 1fr auto;
+      gap: 14px;
+      min-height: 0;
+    }
+
     .status {
-      width: 640px; min-height: 70px; padding: 14px 24px;
-      border-radius: 10px; background: #181818; border: 1px solid #2a2a2a;
-      display: flex; flex-direction: column;
-      align-items: center; justify-content: center;
-      text-align: center; transition: background 0.4s, border-color 0.4s;
+      border-radius: 14px;
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      background: rgba(255, 255, 255, 0.04);
+      min-height: 118px;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      text-align: center;
+      transition: background 0.25s ease, border-color 0.25s ease;
     }
-    .status.success { background: #193319; border-color: #4CAF50; }
-    .status.error   { background: #331919; border-color: #f44336; }
-    .status .name { font-size: 1.4em; font-weight: 600; }
-    .status .info { font-size: 0.9em; color: #aaa; margin-top: 5px; }
-    button {
-      padding: 13px 52px; font-size: 1.05em; letter-spacing: 2px;
-      background: #1565C0; color: #fff; border: none; border-radius: 8px;
-      cursor: pointer; text-transform: uppercase; transition: background 0.2s;
+
+    .status.success {
+      background: rgba(58, 209, 124, 0.13);
+      border-color: rgba(58, 209, 124, 0.45);
     }
-    button:hover:not(:disabled) { background: #1976D2; }
-    button:disabled { background: #2a2a2a; color: #555; cursor: not-allowed; }
-    .hint { font-size: 0.72em; color: #444; }
+
+    .status.error {
+      background: rgba(255, 109, 109, 0.12);
+      border-color: rgba(255, 109, 109, 0.45);
+    }
+
+    .status-title {
+      font-size: clamp(1.05rem, 1.7vw, 1.4rem);
+      font-weight: 700;
+      line-height: 1.2;
+      color: #eef6fa;
+    }
+
+    .status-info {
+      margin-top: 6px;
+      color: var(--muted);
+      font-size: clamp(0.9rem, 1.35vw, 1.02rem);
+    }
+
+    .actions {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 10px;
+    }
+
+    .btn {
+      width: 100%;
+      border: 0;
+      border-radius: 12px;
+      padding: 14px 16px;
+      font-size: clamp(1rem, 1.5vw, 1.18rem);
+      font-weight: 700;
+      letter-spacing: 0.09em;
+      text-transform: uppercase;
+      cursor: pointer;
+      transition: transform 0.15s ease, background 0.2s ease, opacity 0.2s ease;
+    }
+
+    .btn:active:not(:disabled) {
+      transform: scale(0.985);
+    }
+
+    .btn:disabled {
+      opacity: 0.55;
+      cursor: not-allowed;
+    }
+
+    .btn-primary {
+      background: linear-gradient(180deg, var(--accent), var(--accent-strong));
+      color: #f3fcff;
+    }
+
+    .btn-secondary {
+      background: rgba(255, 255, 255, 0.1);
+      border: 1px solid rgba(255, 255, 255, 0.22);
+      color: #e8f3f7;
+    }
+
+    .hint {
+      color: #94aebb;
+      font-size: 0.9rem;
+      text-align: center;
+      line-height: 1.35;
+    }
+
+    .footer {
+      text-align: center;
+      color: #88a2af;
+      font-size: 0.84rem;
+      opacity: 0.9;
+    }
+
+    @media (max-width: 980px) {
+      .main {
+        grid-template-columns: 1fr;
+        grid-template-rows: 1fr auto;
+      }
+
+      .camera-card {
+        min-height: 52vh;
+      }
+    }
+
+    @media (max-width: 560px) {
+      .screen {
+        padding: 10px;
+      }
+
+      .brand {
+        letter-spacing: 0.12em;
+      }
+    }
   </style>
 </head>
 <body>
-  <h1>BioAttend</h1>
-  <div class="camera-wrap">
-    <img id="feed" src="/snapshot" alt="Camera">
-    <div class="oval" id="oval"></div>
+  <div class="screen">
+    <header class="topbar">
+      <h1 class="brand">BioAttend</h1>
+      <div class="clock" id="clock">--:--:--</div>
+    </header>
+
+    <main class="main">
+      <section class="camera-card">
+        <img id="feed" src="/snapshot" alt="Flux camera">
+        <div class="scan-oval" id="scanOval"></div>
+        <div class="guide">Placez votre visage dans l'ovale</div>
+      </section>
+
+      <aside class="side">
+        <div class="status" id="status">
+          <div class="status-title" id="statusTitle">Pret pour pointage</div>
+          <div class="status-info" id="statusInfo">Appuyez sur Pointer ou sur Espace</div>
+        </div>
+        <div></div>
+        <div class="actions">
+          <button class="btn btn-primary" id="btnPointage" type="button">Pointer</button>
+          <button class="btn btn-secondary" id="btnFullscreen" type="button">Plein ecran</button>
+          <p class="hint">Conseil: lancez le navigateur en mode kiosk pour un vrai plein ecran permanent.</p>
+        </div>
+      </aside>
+    </main>
+
+    <footer class="footer">Station de pointage locale</footer>
   </div>
-  <div class="status" id="status">
-    <span class="info">Positionnez votre visage dans le cadre</span>
-  </div>
-  <button id="btn" onclick="startPointage()">Pointer</button>
-  <p class="hint">ou appuyez sur Espace</p>
+
   <script>
-    var timer = null;
-    function startRefresh() {
-      if (timer) return;
-      timer = setInterval(function() {
-        document.getElementById('feed').src = '/snapshot?' + Date.now();
-      }, 200);
+    var feed = document.getElementById('feed');
+    var btnPointage = document.getElementById('btnPointage');
+    var btnFullscreen = document.getElementById('btnFullscreen');
+    var scanOval = document.getElementById('scanOval');
+    var status = document.getElementById('status');
+    var statusTitle = document.getElementById('statusTitle');
+    var statusInfo = document.getElementById('statusInfo');
+    var clock = document.getElementById('clock');
+
+    var streamRunning = false;
+    var streamTimer = null;
+
+    function setStatus(mode, title, info) {
+      status.className = 'status' + (mode ? ' ' + mode : '');
+      scanOval.className = 'scan-oval' + (mode ? ' ' + mode : '');
+      statusTitle.textContent = title;
+      statusInfo.textContent = info;
     }
-    function stopRefresh() { clearInterval(timer); timer = null; }
-    startRefresh();
-    document.addEventListener('keydown', function(e) {
-      if (e.code === 'Space' && !document.getElementById('btn').disabled) {
-        e.preventDefault();
-        startPointage();
+
+    function scheduleNextFrame(delay) {
+      if (!streamRunning) {
+        return;
       }
+      clearTimeout(streamTimer);
+      streamTimer = setTimeout(function() {
+        feed.src = '/snapshot?' + Date.now();
+      }, delay);
+    }
+
+    function startStream() {
+      if (streamRunning) {
+        return;
+      }
+      streamRunning = true;
+      scheduleNextFrame(10);
+    }
+
+    function stopStream() {
+      streamRunning = false;
+      clearTimeout(streamTimer);
+      streamTimer = null;
+    }
+
+    feed.addEventListener('load', function() {
+      scheduleNextFrame(140);
     });
+
+    feed.addEventListener('error', function() {
+      scheduleNextFrame(260);
+    });
+
+    function updateClock() {
+      var now = new Date();
+      var time = now.toLocaleTimeString('fr-FR');
+      var date = now.toLocaleDateString('fr-FR', {
+        weekday: 'short',
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric'
+      });
+      clock.textContent = time + '  |  ' + date;
+    }
+
+    async function enterFullscreen() {
+      var el = document.documentElement;
+      if (!document.fullscreenElement && el.requestFullscreen) {
+        try {
+          await el.requestFullscreen();
+        } catch (e) {
+          return;
+        }
+      }
+    }
+
     async function startPointage() {
-      var btn = document.getElementById('btn');
-      var status = document.getElementById('status');
-      var oval = document.getElementById('oval');
-      btn.disabled = true;
-      stopRefresh();
-      oval.className = 'oval';
-      status.className = 'status';
-      status.innerHTML = '<span class="info">Identification en cours\u2026</span>';
+      btnPointage.disabled = true;
+      stopStream();
+      setStatus('', 'Identification en cours...', 'Veuillez patienter');
       try {
         var resp = await fetch('/pointage', { method: 'POST' });
         var data = await resp.json();
         if (data.ok && data.matched) {
           var type = data.pointage_type === 'ENTREE' ? 'Entr\u00e9e' : 'Sortie';
           var heure = new Date().toLocaleTimeString('fr-FR');
-          oval.className = 'oval success';
-          status.className = 'status success';
-          status.innerHTML = '<span class="name">\u2713 ' + data.full_name + '</span>' +
-            '<span class="info">' + type + ' \u2014 ' + heure + '</span>';
+          setStatus('success', 'Identifie: ' + data.full_name, type + ' a ' + heure);
         } else {
-          oval.className = 'oval error';
-          status.className = 'status error';
-          status.innerHTML = '<span class="name">\u2717 Non reconnu</span>' +
-            '<span class="info">' + (data.error || 'Veuillez r\u00e9essayer') + '</span>';
+          setStatus('error', 'Non reconnu', data.error || 'Veuillez reessayer');
         }
-      } catch(e) {
-        oval.className = 'oval error';
-        status.className = 'status error';
-        status.innerHTML = '<span class="name">\u2717 Erreur r\u00e9seau</span>';
+      } catch (e) {
+        setStatus('error', 'Erreur reseau', 'Connexion API indisponible');
       }
       setTimeout(function() {
-        oval.className = 'oval';
-        status.className = 'status';
-        status.innerHTML = '<span class="info">Positionnez votre visage dans le cadre</span>';
-        btn.disabled = false;
-        startRefresh();
-      }, 4000);
+        setStatus('', 'Pret pour pointage', 'Appuyez sur Pointer ou sur Espace');
+        btnPointage.disabled = false;
+        startStream();
+      }, 3500);
     }
+
+    btnPointage.addEventListener('click', startPointage);
+    btnFullscreen.addEventListener('click', enterFullscreen);
+
+    document.addEventListener('keydown', function(e) {
+      if ((e.code === 'Space' || e.code === 'Enter') && !btnPointage.disabled) {
+        e.preventDefault();
+        startPointage();
+      }
+      if (e.key === 'f' || e.key === 'F') {
+        enterFullscreen();
+      }
+    });
+
+    document.addEventListener('pointerdown', function autoKiosk() {
+      enterFullscreen();
+      document.removeEventListener('pointerdown', autoKiosk);
+    }, { once: true });
+
+    updateClock();
+    setInterval(updateClock, 1000);
+    startStream();
   </script>
 </body>
 </html>
