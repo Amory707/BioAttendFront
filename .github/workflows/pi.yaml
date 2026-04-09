@@ -163,13 +163,13 @@ jobs:
 
             mkdir -p "${AUTOSTART_DIR}"
 
-            cat > "${AUTOSTART_FILE}" << 'AUTOEOF'
-@xset s off
-@xset -dpms
-@xset s noblank
-@bash -lc 'pkill -x unclutter >/dev/null 2>&1 || true; command -v unclutter >/dev/null 2>&1 && unclutter -idle 0 -root &'
-@bash -lc 'sleep 6; BROWSER="$(command -v chromium || command -v chromium-browser || true)"; if [ -n "$BROWSER" ]; then pkill -f "chromium.*--app=http://localhost:5000" >/dev/null 2>&1 || true; "$BROWSER" --kiosk --app=http://localhost:5000 --noerrdialogs --disable-infobars; fi'
-AUTOEOF
+            {
+              echo "@xset s off"
+              echo "@xset -dpms"
+              echo "@xset s noblank"
+              echo "@bash -lc 'pkill -x unclutter >/dev/null 2>&1 || true; command -v unclutter >/dev/null 2>&1 && unclutter -idle 0 -root &'"
+              echo "@bash -lc 'sleep 6; BROWSER=\"$(command -v chromium || command -v chromium-browser || true)\"; if [ -n \"$BROWSER\" ]; then pkill -f \"chromium.*--app=http://localhost:5000\" >/dev/null 2>&1 || true; \"$BROWSER\" --kiosk --app=http://localhost:5000 --noerrdialogs --disable-infobars; fi'"
+            } > "${AUTOSTART_FILE}"
 
             echo "✅ Fichier autostart kiosk mis à jour: ${AUTOSTART_FILE}"
           EOF
