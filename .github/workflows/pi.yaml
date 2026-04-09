@@ -160,10 +160,13 @@ jobs:
             set -euo pipefail
             AUTOSTART_DIR="/home/bioattend/.config/lxsession/LXDE-pi"
             AUTOSTART_FILE="${AUTOSTART_DIR}/autostart"
+            LABWC_DIR="/home/bioattend/.config/labwc"
+            LABWC_AUTOSTART_FILE="${LABWC_DIR}/autostart"
             BIN_DIR="/home/bioattend/.local/bin"
             KIOSK_SCRIPT="${BIN_DIR}/bioattend-kiosk.sh"
 
             mkdir -p "${AUTOSTART_DIR}"
+            mkdir -p "${LABWC_DIR}"
             mkdir -p "${BIN_DIR}"
 
             {
@@ -187,6 +190,10 @@ jobs:
               echo '  sleep 1'
               echo 'done'
               echo ''
+              echo 'export XDG_SESSION_TYPE="${XDG_SESSION_TYPE:-wayland}"'
+              echo 'export WAYLAND_DISPLAY="${WAYLAND_DISPLAY:-wayland-0}"'
+              echo 'export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"'
+              echo ''
               echo 'BROWSER="$(command -v chromium || command -v chromium-browser || true)"'
               echo 'if [ -z "${BROWSER}" ]; then'
               echo '  echo "Chromium introuvable"'
@@ -194,7 +201,7 @@ jobs:
               echo 'fi'
               echo ''
               echo 'pkill -f "chromium.*--app=http://localhost:5000" >/dev/null 2>&1 || true'
-              echo '"${BROWSER}" --kiosk --app=http://localhost:5000 --noerrdialogs --disable-infobars'
+              echo '"${BROWSER}" --ozone-platform=wayland --kiosk --app=http://localhost:5000 --noerrdialogs --disable-infobars'
             } > "${KIOSK_SCRIPT}"
 
             chmod +x "${KIOSK_SCRIPT}"
@@ -207,6 +214,14 @@ jobs:
               echo "@${KIOSK_SCRIPT}"
             } > "${AUTOSTART_FILE}"
 
+            {
+              echo 'wlr-randr --output HDMI-A-1 --on >/dev/null 2>&1 || true'
+              echo 'pkill -x unclutter >/dev/null 2>&1 || true'
+              echo 'command -v unclutter >/dev/null 2>&1 && unclutter -idle 0 -root &' 
+              echo "${KIOSK_SCRIPT} &"
+            } > "${LABWC_AUTOSTART_FILE}"
+
             echo "✅ Fichier autostart kiosk mis à jour: ${AUTOSTART_FILE}"
+            echo "✅ Fichier autostart labwc mis à jour: ${LABWC_AUTOSTART_FILE}"
             echo "✅ Script kiosk généré: ${KIOSK_SCRIPT}"
           EOF
