@@ -29,6 +29,7 @@ load_dotenv(_resolve_env_file())
 @dataclass(slots=True)
 class Settings:
     debug: bool
+    kiosk_mode: bool
     camera_width: int
     camera_height: int
     camera_device: str
@@ -47,6 +48,7 @@ class Settings:
     def from_env(cls) -> "Settings":
         return cls(
             debug=_to_bool(os.getenv("DEBUG"), default=False),
+            kiosk_mode=_to_bool(os.getenv("KIOSK_MODE"), default=True),
             camera_width=_to_int(os.getenv("CAMERA_WIDTH"), default=1280),
             camera_height=_to_int(os.getenv("CAMERA_HEIGHT"), default=720),
             camera_device=os.getenv("CAMERA_DEVICE", "0"),

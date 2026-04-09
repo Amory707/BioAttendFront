@@ -81,6 +81,7 @@ Créer un fichier `.env` à la racine du projet. Ce fichier **ne doit jamais êt
 ```env
 # ── Mode debug Flask ──────────────────────────────────────────────
 DEBUG=false
+KIOSK_MODE=true          # Active l'UI borne plein écran
 
 # ── Caméra ───────────────────────────────────────────────────────
 CAMERA_WIDTH=1280
@@ -110,6 +111,7 @@ API_TIMEOUT_SECONDS=8
 | `API_TOKEN` | Token d'authentification de l'API | Récupérer auprès du responsable backend |
 | `SERVER_URL` | URL de l'endpoint d'identification | Ne pas modifier sauf changement de déploiement |
 | `DEBUG` | Active le mode debug Flask | `false` en production |
+| `KIOSK_MODE` | Active le comportement borne (plein écran auto) | `true` sur Raspberry Pi |
 
 ---
 
@@ -127,6 +129,16 @@ Le serveur démarre sur `http://0.0.0.0:5000`.
 
 - Sur Raspberry Pi : accessible depuis un navigateur sur le même réseau à `http://<ip-du-raspberry>:5000`
 - Sur PC : ouvrir `http://localhost:5000`
+
+### Mode kiosk Raspberry Pi (recommandé)
+
+Pour un rendu station de pointage sans barre navigateur, lancez Chromium en mode kiosk :
+
+```bash
+chromium-browser --kiosk --app=http://localhost:5000
+```
+
+Avec `KIOSK_MODE=true`, l'interface masque le bouton "Plein écran" et force le comportement borne.
 
 ---
 

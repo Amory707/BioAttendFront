@@ -293,7 +293,7 @@ _UI_HTML = """\
         <div class="actions">
           <button class="btn btn-primary" id="btnPointage" type="button">Pointer</button>
           <button class="btn btn-secondary" id="btnFullscreen" type="button">Plein ecran</button>
-          <p class="hint">Conseil: lancez le navigateur en mode kiosk pour un vrai plein ecran permanent.</p>
+            <p class="hint" id="kioskHint">Conseil: lancez le navigateur en mode kiosk pour un vrai plein ecran permanent.</p>
         </div>
       </aside>
     </main>
@@ -310,6 +310,8 @@ _UI_HTML = """\
     var statusTitle = document.getElementById('statusTitle');
     var statusInfo = document.getElementById('statusInfo');
     var clock = document.getElementById('clock');
+    var kioskHint = document.getElementById('kioskHint');
+    var KIOSK_MODE = __KIOSK_MODE__;
 
     var streamRunning = false;
     var streamTimer = null;
@@ -413,10 +415,20 @@ _UI_HTML = """\
       }
     });
 
-    document.addEventListener('pointerdown', function autoKiosk() {
-      enterFullscreen();
-      document.removeEventListener('pointerdown', autoKiosk);
-    }, { once: true });
+    if (KIOSK_MODE) {
+      btnFullscreen.style.display = 'none';
+      kioskHint.textContent = 'Mode kiosk actif';
+
+      document.addEventListener('pointerdown', function autoKiosk() {
+        enterFullscreen();
+        document.removeEventListener('pointerdown', autoKiosk);
+      }, { once: true });
+
+      document.addEventListener('keydown', function autoKioskKey() {
+        enterFullscreen();
+        document.removeEventListener('keydown', autoKioskKey);
+      }, { once: true });
+    }
 
     updateClock();
     setInterval(updateClock, 1000);
@@ -567,7 +579,8 @@ def create_app() -> Flask:
 
     @app.get("/")
     def index() -> tuple[str, int, dict[str, str]]:
-        return _UI_HTML, 200, {"Content-Type": "text/html; charset=utf-8"}
+      html = _UI_HTML.replace("__KIOSK_MODE__", "true" if settings.kiosk_mode else "false")
+      return html, 200, {"Content-Type": "text/html; charset=utf-8"}
 
     @app.get("/snapshot")
     def snapshot() -> object:
