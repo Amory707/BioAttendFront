@@ -8,6 +8,7 @@ from .camera import capture_frame, capture_frame_fast, probe_camera
 from .config import Settings
 from .embedding import generate_embedding
 from .face import detect_and_crop_face
+from .anti_spoofing import AntiSpoofPredict
 
 _UI_HTML = """\
 <!DOCTYPE html>
@@ -131,6 +132,15 @@ _UI_HTML = """\
 </body>
 </html>
 """
+
+# Initialized once at module level — safe because AntiSpoofPredict
+# only loads the model on first predict() call, not on __init__.
+_anti_spoof = AntiSpoofPredict()
+_ANTI_SPOOF_MODEL_PATH = (
+    "./resources/anti_spoof_models/"
+    "2.7182818284590452353602874713527_MiniFASNetV2.pth"
+)
+_ANTI_SPOOF_THRESHOLD = 0.7  # real_score must exceed this to pass
 
 
 def create_app() -> Flask:
@@ -290,15 +300,32 @@ def create_app() -> Flask:
 
     @app.post("/pointage")
     def pointage() -> tuple[object, int]:
+        # ── 1. Capture ────────────────────────────────────────────────────
         capture_result = capture_frame_fast(settings)
         if not capture_result["ok"]:
             return jsonify({"ok": False, "matched": False, "error": "Capture échouée"}), 503
+
         frame = capture_result.pop("frame")
+
+        # ── 2. Face detection ─────────────────────────────────────────────
         face_result = detect_and_crop_face(frame)
         if not face_result.get("ok", False):
             face_result.pop("face_crop", None)
             return jsonify({"ok": False, "matched": False, "error": "Aucun visage détecté"}), 422
+
         face_crop = face_result.pop("face_crop")
+
+        # ── 3. Anti-spoofing (liveness check) ────────────────────────────
+        spoof_result = _anti_spoof.predict(frame, _ANTI_SPOOF_MODEL_PATH)
+        real_score = float(spoof_result[0][1])
+        if real_score < _ANTI_SPOOF_THRESHOLD:
+            return jsonify({
+                "ok": False,
+                "matched": False,
+                "error": "Liveness check failed",
+            }), 403
+
+        # ── 4. Embedding ──────────────────────────────────────────────────
         embedding_result = generate_embedding(
             frame=frame,
             settings=settings,
@@ -307,9 +334,13 @@ def create_app() -> Flask:
         )
         if not embedding_result.get("ok", False):
             return jsonify({"ok": False, "matched": False, "error": "Échec d'embedding"}), 503
+
         embedding_vector = embedding_result.pop("embedding")
+
+        # ── 5. API identification ─────────────────────────────────────────
         api_result = identify_embedding(embedding_vector, settings)
         api_response = api_result.get("response", {})
+
         if api_result.get("ok") and api_response.get("matched"):
             return jsonify({
                 "ok": True,
@@ -318,6 +349,7 @@ def create_app() -> Flask:
                 "pointage_type": api_response.get("pointage_type"),
                 "pointage_id": api_response.get("pointage_id"),
             }), 200
+
         return jsonify({
             "ok": False,
             "matched": False,
@@ -325,6 +357,3 @@ def create_app() -> Flask:
         }), 401
 
     return app
-
-
-app = create_app()
