@@ -61,7 +61,7 @@ cd BioAttendFront
 
 # Créer un environnement virtuel (recommandé)
 python3 -m venv .venv
-source .venv/bin/activate
+source venv/bin/activate
 
 # Installer les dépendances
 pip install -r requirements.txt
@@ -95,6 +95,12 @@ CAMERA_READ_ATTEMPTS=10   # Nombre de tentatives de lecture de frame
 INSIGHTFACE_MODEL_NAME=buffalo_l
 INSIGHTFACE_DET_WIDTH=640
 INSIGHTFACE_DET_HEIGHT=640
+
+# ── Liveness (anti-spoofing) ──────────────────────────────────────
+LIVENESS_ENABLED=false
+LIVENESS_TIMEOUT_SECONDS=5
+LIVENESS_ANTISPOOF_MODEL_PATH=/opt/models/antispoof.onnx
+LIVENESS_MIN_SCORE=0.65
 
 # ── API distante ──────────────────────────────────────────────────
 SERVER_URL=https://bioattend.138.199.195.144.sslip.io/api/face/identify/
@@ -147,9 +153,10 @@ Ces routes permettent de tester chaque brique du pipeline de façon isolée. Uti
 | Méthode | Route | Description |
 |---|---|---|
 | `GET` | `/health` | Vérifie que le service tourne |
-| `GET` | `/config` | Affiche la configuration active (token masqué) |
+| `GET` | `/diagnostics/config` | Affiche la configuration active (token masqué) |
 | `GET` | `/diagnostics/camera` | Teste la capture d'une frame |
 | `GET` | `/diagnostics/face` | Teste la détection + crop du visage |
+| `GET/POST` | `/diagnostics/liveness` | Teste la liveness locale (si activée) |
 | `GET` | `/diagnostics/embedding` | Teste la génération du vecteur |
 | `GET/POST` | `/diagnostics/identify` | Teste le pipeline complet jusqu'à l'appel API |
 | `GET` | `/snapshot` | Retourne une frame JPEG brute (utilisé par l'UI) |
@@ -249,8 +256,9 @@ Routes utiles :
 2. GET /diagnostics/config
 3. GET /diagnostics/camera
 4. GET /diagnostics/face
-5. GET /diagnostics/embedding
-6. GET /diagnostics/identify
+5. GET/POST /diagnostics/liveness
+6. GET /diagnostics/embedding
+7. GET /diagnostics/identify
 
 ## Dependances
 
@@ -267,7 +275,6 @@ Note importante pour le Raspberry Pi :
 A ce stade, le depot ne fait pas encore :
 
 1. la lecture du PIR
-2. la liveness
-3. l'affichage local sur l'ecran de la pointeuse
+2. l'affichage local sur l'ecran de la pointeuse
 
 Ce n'est pas un oubli. C'est un choix de sequence pour valider d'abord la base materielle et logicielle.

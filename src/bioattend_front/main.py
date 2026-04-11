@@ -8,6 +8,7 @@ from .camera import capture_frame, capture_frame_fast, probe_camera
 from .config import Settings
 from .embedding import generate_embedding
 from .face import detect_and_crop_face
+from .liveness import run_liveness_check
 
 _UI_HTML = """\
 <!DOCTYPE html>
@@ -271,6 +272,15 @@ def create_app() -> Flask:
             return jsonify(response), 200
         return jsonify(response), 503
 
+    @app.post("/diagnostics/liveness")
+    @app.get("/diagnostics/liveness")
+    def diagnostics_liveness() -> tuple[object, int]:
+        result = run_liveness_check(settings)
+        if not result.get("enabled", False):
+            return jsonify({"ok": True, "liveness": result}), 200
+        status_code = 200 if result.get("ok", False) else 503
+        return jsonify({"ok": result.get("ok", False), "liveness": result}), status_code
+
     @app.get("/")
     def index() -> tuple[str, int, dict[str, str]]:
         return _UI_HTML, 200, {"Content-Type": "text/html; charset=utf-8"}
@@ -290,10 +300,37 @@ def create_app() -> Flask:
 
     @app.post("/pointage")
     def pointage() -> tuple[object, int]:
-        capture_result = capture_frame_fast(settings)
-        if not capture_result["ok"]:
-            return jsonify({"ok": False, "matched": False, "error": "Capture échouée"}), 503
-        frame = capture_result.pop("frame")
+        liveness_result = run_liveness_check(settings, include_frame=True)
+        liveness_payload = dict(liveness_result)
+        liveness_payload.pop("frame", None)
+
+        frame = liveness_result.get("frame")
+        if liveness_result.get("enabled", False):
+            if not liveness_result.get("ok", False):
+                return jsonify(
+                    {
+                        "ok": False,
+                        "matched": False,
+                        "error": "Échec de la vérification de vivacité",
+                        "liveness": liveness_payload,
+                    }
+                ), 503
+            if not liveness_result.get("is_live", False):
+                return jsonify(
+                    {
+                        "ok": False,
+                        "matched": False,
+                        "error": "Liveness échouée",
+                        "liveness": liveness_payload,
+                    }
+                ), 403
+
+        if frame is None:
+            capture_result = capture_frame_fast(settings)
+            if not capture_result["ok"]:
+                return jsonify({"ok": False, "matched": False, "error": "Capture échouée"}), 503
+            frame = capture_result.pop("frame")
+
         face_result = detect_and_crop_face(frame)
         if not face_result.get("ok", False):
             face_result.pop("face_crop", None)
@@ -317,11 +354,13 @@ def create_app() -> Flask:
                 "full_name": api_response.get("full_name"),
                 "pointage_type": api_response.get("pointage_type"),
                 "pointage_id": api_response.get("pointage_id"),
+                "liveness": liveness_payload,
             }), 200
         return jsonify({
             "ok": False,
             "matched": False,
             "error": api_response.get("error", "Identité non reconnue"),
+            "liveness": liveness_payload,
         }), 401
 
     return app

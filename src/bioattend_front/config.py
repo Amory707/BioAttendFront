@@ -39,6 +39,10 @@ class Settings:
     insightface_model_name: str
     insightface_det_width: int
     insightface_det_height: int
+    liveness_enabled: bool
+    liveness_timeout_seconds: int
+    liveness_antispoof_model_path: str
+    liveness_min_score: float
     server_url: str
     api_token: str
     api_timeout_seconds: int
@@ -57,6 +61,10 @@ class Settings:
             insightface_model_name=os.getenv("INSIGHTFACE_MODEL_NAME", "buffalo_l").strip(),
             insightface_det_width=_to_int(os.getenv("INSIGHTFACE_DET_WIDTH"), default=640),
             insightface_det_height=_to_int(os.getenv("INSIGHTFACE_DET_HEIGHT"), default=640),
+            liveness_enabled=_to_bool(os.getenv("LIVENESS_ENABLED"), default=False),
+            liveness_timeout_seconds=_to_int(os.getenv("LIVENESS_TIMEOUT_SECONDS"), default=5),
+            liveness_antispoof_model_path=os.getenv("LIVENESS_ANTISPOOF_MODEL_PATH", "").strip(),
+            liveness_min_score=float(os.getenv("LIVENESS_MIN_SCORE", "0.65")),
             server_url=os.getenv(
                 "SERVER_URL",
                 "https://bioattend.138.199.195.144.sslip.io/api/face/identify/",
