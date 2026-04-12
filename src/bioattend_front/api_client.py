@@ -77,36 +77,53 @@ def report_event(
     if details:
         payload["details"] = details
 
-    started_at = time.monotonic()
-    try:
-        response = requests.post(
-            settings.events_url,
-            json=payload,
-            headers=_build_headers(settings),
-            timeout=settings.api_timeout_seconds,
-        )
-    except requests.RequestException as exc:
+    def _post_event(url: str) -> dict[str, Any]:
+        started_at = time.monotonic()
+        try:
+            response = requests.post(
+                url,
+                json=payload,
+                headers=_build_headers(settings),
+                timeout=settings.api_timeout_seconds,
+            )
+        except requests.RequestException as exc:
+            duration_ms = round((time.monotonic() - started_at) * 1000, 2)
+            return {
+                "ok": False,
+                "duration_ms": duration_ms,
+                "error": f"Event API request failed: {exc}",
+                "target": url,
+                "payload": payload,
+            }
+
         duration_ms = round((time.monotonic() - started_at) * 1000, 2)
+        try:
+            body: Any = response.json()
+        except ValueError:
+            body = {"raw": response.text}
+
         return {
-            "ok": False,
+            "ok": 200 <= response.status_code < 300,
             "duration_ms": duration_ms,
-            "error": f"Event API request failed: {exc}",
-            "target": settings.events_url,
+            "status_code": response.status_code,
+            "target": url,
+            "response": body,
             "payload": payload,
         }
 
-    duration_ms = round((time.monotonic() - started_at) * 1000, 2)
-    try:
-        body: Any = response.json()
-    except ValueError:
-        body = {"raw": response.text}
+    first = _post_event(settings.events_url)
+    if first.get("ok"):
+        return first
 
-    return {
-        "ok": 200 <= response.status_code < 300,
-        "duration_ms": duration_ms,
-        "status_code": response.status_code,
-        "target": settings.events_url,
-        "response": body,
-        "payload": payload,
-    }
+    if int(first.get("status_code") or 0) == 404:
+        base_url = settings.events_url.strip()
+        alternate_url = base_url[:-1] if base_url.endswith("/") else f"{base_url}/"
+        if alternate_url and alternate_url != base_url:
+            second = _post_event(alternate_url)
+            second["retry_from"] = base_url
+            if second.get("ok"):
+                second["url_autofixed"] = True
+            return second
+
+    return first
 
