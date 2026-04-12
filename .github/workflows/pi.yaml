@@ -121,7 +121,8 @@ jobs:
             exit 0
           fi
           echo "Conversion des modèles Silent-Face → ONNX (première installation)..."
-          pip install --quiet numpy torch --index-url https://download.pytorch.org/whl/cpu
+          pip install --quiet numpy onnx onnxscript
+          pip install --quiet torch --index-url https://download.pytorch.org/whl/cpu
           rm -rf /tmp/sfa /tmp/liveness_models
           git clone --depth 1 https://github.com/minivision-ai/Silent-Face-Anti-Spoofing /tmp/sfa
           if ! python scripts/make_liveness_onnx.py --sfa-path /tmp/sfa --output-dir /tmp/liveness_models; then

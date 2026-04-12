@@ -150,15 +150,29 @@ def convert(sfa_path: str, output_dir: str) -> None:
         # Export ONNX.
         dummy = torch.zeros(1, 3, int(h_in), int(w_in))
         try:
-            torch.onnx.export(
-                model,
-                dummy,
-                str(onnx_path),
-                input_names=["input"],
-                output_names=["output"],
-                opset_version=11,
-                do_constant_folding=True,
-            )
+            export_kwargs = {
+                "input_names": ["input"],
+                "output_names": ["output"],
+                "opset_version": 11,
+                "do_constant_folding": True,
+            }
+            # Force l'ancien exporteur pour éviter la dépendance à onnxscript.
+            try:
+                torch.onnx.export(
+                    model,
+                    dummy,
+                    str(onnx_path),
+                    dynamo=False,
+                    **export_kwargs,
+                )
+            except TypeError:
+                # Compatibilité avec versions PyTorch plus anciennes.
+                torch.onnx.export(
+                    model,
+                    dummy,
+                    str(onnx_path),
+                    **export_kwargs,
+                )
             print(f"  ✅ Exporté: {onnx_path}")
             success += 1
         except Exception as exc:
