@@ -663,7 +663,14 @@ def create_app() -> Flask:
                 threshold=settings.liveness_threshold,
                 live_class_idx=settings.liveness_live_class_idx,
             )
-            if liveness_result.get("ok") and not liveness_result.get("is_live", True):
+            if not liveness_result.get("ok", False):
+                return jsonify({
+                    "ok": False,
+                    "matched": False,
+                    "error": "Liveness indisponible, pointage bloqué",
+                    "liveness_details": liveness_result,
+                }), 503
+            if not liveness_result.get("is_live", True):
                 return jsonify({
                     "ok": False,
                     "matched": False,
