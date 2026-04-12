@@ -468,7 +468,7 @@ def create_app() -> Flask:
     @app.post("/diagnostics/face")
     @app.get("/diagnostics/face")
     def diagnostics_face() -> tuple[object, int]:
-        capture_result = capture_frame(settings)
+        capture_result = capture_frame_fast(settings)
         if not capture_result["ok"]:
             capture_result.pop("frame", None)
             return jsonify(capture_result), 503
@@ -491,7 +491,7 @@ def create_app() -> Flask:
     @app.post("/diagnostics/embedding")
     @app.get("/diagnostics/embedding")
     def diagnostics_embedding() -> tuple[object, int]:
-        capture_result = capture_frame(settings)
+        capture_result = capture_frame_fast(settings)
         if not capture_result["ok"]:
             capture_result.pop("frame", None)
             return jsonify(capture_result), 503
@@ -532,7 +532,7 @@ def create_app() -> Flask:
     @app.post("/diagnostics/identify")
     @app.get("/diagnostics/identify")
     def diagnostics_identify() -> tuple[object, int]:
-        capture_result = capture_frame(settings)
+        capture_result = capture_frame_fast(settings)
         if not capture_result["ok"]:
             capture_result.pop("frame", None)
             return jsonify(capture_result), 503
@@ -593,37 +593,37 @@ def create_app() -> Flask:
     @app.post("/diagnostics/liveness")
     @app.get("/diagnostics/liveness")
     def diagnostics_liveness() -> tuple[object, int]:
-        if not settings.liveness_enabled:
-            return jsonify({"ok": True, "skipped": True, "reason": "LIVENESS_ENABLED=false"}), 200
+      if not settings.liveness_enabled:
+        return jsonify({"ok": True, "skipped": True, "reason": "LIVENESS_ENABLED=false"}), 200
 
-        capture_result = capture_frame(settings)
-        if not capture_result["ok"]:
-            capture_result.pop("frame", None)
-            return jsonify(capture_result), 503
+      capture_result = capture_frame_fast(settings)
+      if not capture_result["ok"]:
+        capture_result.pop("frame", None)
+        return jsonify(capture_result), 503
 
-        frame = capture_result.pop("frame")
-        face_result = detect_and_crop_face(frame)
-        if not face_result.get("ok", False):
-            face_result.pop("face_crop", None)
-            return jsonify({"ok": False, "face": face_result}), 422
-
+      frame = capture_result.pop("frame")
+      face_result = detect_and_crop_face(frame)
+      if not face_result.get("ok", False):
         face_result.pop("face_crop", None)
-        liveness_result = check_liveness(
-            frame=frame,
-            face_bbox=face_result["primary_face"],
-            model_dir=settings.liveness_model_dir,
-            threshold=settings.liveness_threshold,
-            live_class_idx=settings.liveness_live_class_idx,
-        )
+        return jsonify({"ok": False, "face": face_result}), 422
 
-        response = {
-            "ok": liveness_result.get("ok", False),
-            "liveness": liveness_result,
-            "face": face_result,
-        }
-        if liveness_result.get("ok") and liveness_result.get("is_live"):
-            return jsonify(response), 200
-        return jsonify(response), 422
+      face_result.pop("face_crop", None)
+      liveness_result = check_liveness(
+        frame=frame,
+        face_bbox=face_result["primary_face"],
+        model_dir=settings.liveness_model_dir,
+        threshold=settings.liveness_threshold,
+        live_class_idx=settings.liveness_live_class_idx,
+      )
+
+      response = {
+        "ok": liveness_result.get("ok", False),
+        "liveness": liveness_result,
+        "face": face_result,
+      }
+      if liveness_result.get("ok") and liveness_result.get("is_live"):
+        return jsonify(response), 200
+      return jsonify(response), 422
 
     @app.get("/snapshot")
     def snapshot() -> object:
