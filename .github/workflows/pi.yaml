@@ -107,6 +107,31 @@ jobs:
             fi
           EOF
 
+      - name: Build liveness ONNX models (once per branch)
+        run: |
+          set -euo pipefail
+          BRANCH="${{ github.ref_name }}"
+          DEPLOY_PATH="/home/bioattend/${BRANCH}"
+          MODELS_PATH="${DEPLOY_PATH}/models/liveness"
+          echo "Vérification des modèles liveness sur le Pi..."
+          MODELS_PRESENT=$(sshpass -e ssh -o StrictHostKeyChecking=no "${PI_USER}@${PI_HOST}" \
+            "ls '${MODELS_PATH}'/*.onnx 2>/dev/null | wc -l" || echo "0")
+          if [ "${MODELS_PRESENT}" -ge 2 ]; then
+            echo "✅ Modèles liveness déjà présents (${MODELS_PRESENT} fichiers .onnx)"
+            exit 0
+          fi
+          echo "Conversion des modèles Silent-Face → ONNX (première installation)..."
+          pip install --quiet torch --index-url https://download.pytorch.org/whl/cpu
+          git clone --depth 1 https://github.com/minivision-ai/Silent-Face-Anti-Spoofing /tmp/sfa
+          python scripts/make_liveness_onnx.py --sfa-path /tmp/sfa --output-dir /tmp/liveness_models
+          echo "Upload des modèles vers le Pi..."
+          sshpass -e ssh -o StrictHostKeyChecking=no "${PI_USER}@${PI_HOST}" \
+            "mkdir -p '${MODELS_PATH}'"
+          sshpass -e rsync -avz \
+            -e "ssh -o StrictHostKeyChecking=no" \
+            /tmp/liveness_models/ "${PI_USER}@${PI_HOST}:${MODELS_PATH}/"
+          echo "✅ Modèles liveness déployés"
+
       - name: Start app automatically on Raspberry Pi
         run: |
           set -euo pipefail

@@ -33,6 +33,10 @@ class Settings:
     camera_mirror: bool
     camera_swap_rb: bool
     camera_jpeg_quality: int
+    liveness_enabled: bool
+    liveness_model_dir: str
+    liveness_threshold: float
+    liveness_live_class_idx: int
     camera_width: int
     camera_height: int
     camera_device: str
@@ -55,6 +59,13 @@ class Settings:
             camera_mirror=_to_bool(os.getenv("CAMERA_MIRROR"), default=True),
             camera_swap_rb=_to_bool(os.getenv("CAMERA_SWAP_RB"), default=False),
             camera_jpeg_quality=max(40, min(95, _to_int(os.getenv("CAMERA_JPEG_QUALITY"), default=68))),
+            liveness_enabled=_to_bool(os.getenv("LIVENESS_ENABLED"), default=False),
+            liveness_model_dir=os.getenv(
+                "LIVENESS_MODEL_DIR",
+                str(Path(__file__).resolve().parents[2] / "models" / "liveness"),
+            ).strip(),
+            liveness_threshold=float(os.getenv("LIVENESS_THRESHOLD") or "0.6"),
+            liveness_live_class_idx=_to_int(os.getenv("LIVENESS_LIVE_CLASS_IDX"), default=1),
             camera_width=_to_int(os.getenv("CAMERA_WIDTH"), default=1280),
             camera_height=_to_int(os.getenv("CAMERA_HEIGHT"), default=720),
             camera_device=os.getenv("CAMERA_DEVICE", "0"),

@@ -8,6 +8,7 @@ from .camera import capture_frame, capture_frame_fast, probe_camera
 from .config import Settings
 from .embedding import generate_embedding
 from .face import detect_and_crop_face
+from .liveness import check_liveness
 
 _UI_HTML = """\
 <!DOCTYPE html>
@@ -589,6 +590,41 @@ def create_app() -> Flask:
         html = html.replace("__CAMERA_MIRROR__", "true" if settings.camera_mirror else "false")
         return html, 200, {"Content-Type": "text/html; charset=utf-8"}
 
+    @app.post("/diagnostics/liveness")
+    @app.get("/diagnostics/liveness")
+    def diagnostics_liveness() -> tuple[object, int]:
+        if not settings.liveness_enabled:
+            return jsonify({"ok": True, "skipped": True, "reason": "LIVENESS_ENABLED=false"}), 200
+
+        capture_result = capture_frame(settings)
+        if not capture_result["ok"]:
+            capture_result.pop("frame", None)
+            return jsonify(capture_result), 503
+
+        frame = capture_result.pop("frame")
+        face_result = detect_and_crop_face(frame)
+        if not face_result.get("ok", False):
+            face_result.pop("face_crop", None)
+            return jsonify({"ok": False, "face": face_result}), 422
+
+        face_result.pop("face_crop", None)
+        liveness_result = check_liveness(
+            frame=frame,
+            face_bbox=face_result["primary_face"],
+            model_dir=settings.liveness_model_dir,
+            threshold=settings.liveness_threshold,
+            live_class_idx=settings.liveness_live_class_idx,
+        )
+
+        response = {
+            "ok": liveness_result.get("ok", False),
+            "liveness": liveness_result,
+            "face": face_result,
+        }
+        if liveness_result.get("ok") and liveness_result.get("is_live"):
+            return jsonify(response), 200
+        return jsonify(response), 422
+
     @app.get("/snapshot")
     def snapshot() -> object:
         capture_result = capture_frame_fast(settings)
@@ -617,6 +653,24 @@ def create_app() -> Flask:
             face_result.pop("face_crop", None)
             return jsonify({"ok": False, "matched": False, "error": "Aucun visage détecté"}), 422
         face_crop = face_result.pop("face_crop")
+
+        # ── Liveness (anti-spoofing) ──────────────────────────────────────────
+        if settings.liveness_enabled:
+            liveness_result = check_liveness(
+                frame=frame,
+                face_bbox=face_result["primary_face"],
+                model_dir=settings.liveness_model_dir,
+                threshold=settings.liveness_threshold,
+                live_class_idx=settings.liveness_live_class_idx,
+            )
+            if liveness_result.get("ok") and not liveness_result.get("is_live", True):
+                return jsonify({
+                    "ok": False,
+                    "matched": False,
+                    "error": "Tentative d'usurpation détectée",
+                    "liveness_score": liveness_result.get("score"),
+                }), 401
+
         embedding_result = generate_embedding(
             frame=frame,
             settings=settings,
