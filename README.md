@@ -106,6 +106,12 @@ EVENTS_URL=https://bioattend.138.199.195.144.sslip.io/api/front/events/
 API_TOKEN=votre_token_ici
 API_TIMEOUT_SECONDS=8
 DEVICE_NAME=bioattend-pi
+
+# ── Liveness (anti-spoofing) ─────────────────────────────────────
+LIVENESS_ENABLED=true
+LIVENESS_MODEL_DIR=models/liveness
+LIVENESS_THRESHOLD=0.80
+LIVENESS_LIVE_CLASS_IDX=2
 ```
 
 ### Variables importantes

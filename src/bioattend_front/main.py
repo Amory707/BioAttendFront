@@ -661,6 +661,61 @@ def create_app() -> Flask:
         status_code = 200 if liveness_result.get("ok") and liveness_result.get("is_live") else 422
         return jsonify(response), status_code
 
+    @app.get("/diagnostics/liveness/preview")
+    def diagnostics_liveness_preview() -> object:
+        sample = _capture_with_face()
+        if not sample.get("ok", False):
+            status_code = 422 if sample.get("error_code") == "no_face" else 503
+            return jsonify(sample), status_code
+
+        frame = sample["frame"].copy()
+        face_result = sample["face"]
+        face_bbox = face_result.get("primary_face") or {}
+        if not face_bbox:
+            return jsonify({"ok": False, "error": "Missing primary face bbox."}), 503
+
+        x = int(face_bbox.get("x", 0))
+        y = int(face_bbox.get("y", 0))
+        w = int(face_bbox.get("w", 0))
+        h = int(face_bbox.get("h", 0))
+        cv2.rectangle(frame, (x, y), (x + w, y + h), (60, 220, 80), 2)
+        cv2.putText(frame, "face", (x, max(20, y - 8)), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (60, 220, 80), 2)
+
+        liveness_result = check_liveness(
+          frame=sample["frame"],
+          face_bbox=face_bbox,
+          model_dir=settings.liveness_model_dir,
+          threshold=settings.liveness_threshold,
+          live_class_idx=settings.liveness_live_class_idx,
+        )
+        regions = liveness_result.get("model_regions") or []
+        colors = [(255, 170, 0), (0, 200, 255), (180, 120, 255)]
+        for idx, region in enumerate(regions):
+          bbox = region.get("bbox") or {}
+          rx = int(bbox.get("x", 0))
+          ry = int(bbox.get("y", 0))
+          rw = int(bbox.get("w", 0))
+          rh = int(bbox.get("h", 0))
+          color = colors[idx % len(colors)]
+          cv2.rectangle(frame, (rx, ry), (rx + rw, ry + rh), color, 2)
+          label = str(region.get("model", "model"))
+          cv2.putText(frame, label, (rx, max(20, ry - 8)), cv2.FONT_HERSHEY_SIMPLEX, 0.48, color, 2)
+
+        score = liveness_result.get("score")
+        is_live = liveness_result.get("is_live")
+        backend = liveness_result.get("backend", "unknown")
+        text = f"{backend} | liveness: {score} ({'live' if is_live else 'spoof'})" if score is not None else f"{backend} | liveness: n/a"
+        cv2.putText(frame, text, (14, 26), cv2.FONT_HERSHEY_SIMPLEX, 0.56, (245, 245, 245), 2)
+
+        ok, jpeg = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, settings.camera_jpeg_quality])
+        if not ok:
+            return jsonify({"ok": False, "error": "Failed to encode preview image."}), 503
+        return Response(
+            jpeg.tobytes(),
+            mimetype="image/jpeg",
+            headers={"Cache-Control": "no-store"},
+        )
+
     @app.get("/snapshot")
     def snapshot() -> object:
         capture_result = capture_frame_fast(settings)
