@@ -461,6 +461,27 @@ def create_app() -> Flask:
     app.config["BIOATTEND_SETTINGS"] = settings
     platform_event_types = {"recognition_failed", "unknown_user", "spoof_attempt"}
 
+    def _bbox_iou(a: dict, b: dict) -> float:
+        ax1, ay1 = int(a.get("x", 0)), int(a.get("y", 0))
+        ax2, ay2 = ax1 + int(a.get("w", 0)), ay1 + int(a.get("h", 0))
+        bx1, by1 = int(b.get("x", 0)), int(b.get("y", 0))
+        bx2, by2 = bx1 + int(b.get("w", 0)), by1 + int(b.get("h", 0))
+
+        inter_x1 = max(ax1, bx1)
+        inter_y1 = max(ay1, by1)
+        inter_x2 = min(ax2, bx2)
+        inter_y2 = min(ay2, by2)
+        inter_w = max(0, inter_x2 - inter_x1)
+        inter_h = max(0, inter_y2 - inter_y1)
+        inter = inter_w * inter_h
+
+        area_a = max(0, ax2 - ax1) * max(0, ay2 - ay1)
+        area_b = max(0, bx2 - bx1) * max(0, by2 - by1)
+        union = area_a + area_b - inter
+        if union <= 0:
+            return 0.0
+        return float(inter / union)
+
     def _emit_platform_event(
         event_type: str,
         *,
@@ -481,23 +502,36 @@ def create_app() -> Flask:
     def _capture_with_face(max_attempts: int = 6, delay_ms: int = 70) -> dict:
         last_capture: dict | None = None
         last_face: dict | None = None
+        pending_bbox: dict | None = None
         for attempt_idx in range(max_attempts):
             capture_result = capture_frame_fast(settings)
             if not capture_result.get("ok", False):
                 capture_result.pop("frame", None)
                 last_capture = capture_result
+                pending_bbox = None
             else:
                 frame = capture_result.pop("frame")
                 face_result = detect_and_crop_face(frame)
                 if face_result.get("ok", False):
-                    return {
-                        "ok": True,
-                        "frame": frame,
-                        "camera": capture_result.get("camera"),
-                        "platform": capture_result.get("platform"),
-                        "face": face_result,
-                        "attempts_used": attempt_idx + 1,
-                    }
+                    current_bbox = face_result.get("primary_face") or {}
+                    if pending_bbox is None:
+                        pending_bbox = current_bbox
+                        face_result.pop("face_crop", None)
+                        last_capture = capture_result
+                        last_face = face_result
+                    else:
+                        iou = _bbox_iou(pending_bbox, current_bbox)
+                        if iou >= 0.18:
+                            return {
+                                "ok": True,
+                                "frame": frame,
+                                "camera": capture_result.get("camera"),
+                                "platform": capture_result.get("platform"),
+                                "face": face_result,
+                                "attempts_used": attempt_idx + 1,
+                                "face_confirmed_iou": round(iou, 4),
+                            }
+                        pending_bbox = current_bbox
                 face_result.pop("face_crop", None)
                 last_capture = capture_result
                 last_face = face_result
