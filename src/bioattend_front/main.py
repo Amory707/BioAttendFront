@@ -393,7 +393,14 @@ _UI_HTML = """\
           var heure = new Date().toLocaleTimeString('fr-FR');
           setStatus('success', 'Identifie: ' + data.full_name, type + ' a ' + heure);
         } else {
-          setStatus('error', 'Non reconnu', data.error || 'Veuillez reessayer');
+          var errorType = data.error_type || 'recognition_failed';
+          var titleByType = {
+            recognition_failed: 'Echec de reconnaissance',
+            unknown_user: 'Utilisateur inconnu',
+            spoof_attempt: 'Tentative d\'usurpation detectee'
+          };
+          var loggedText = data.event_logged === true ? 'journalise plateforme: oui' : 'journalise plateforme: non';
+          setStatus('error', titleByType[errorType] || 'Non reconnu', (data.error || 'Veuillez reessayer') + ' | ' + loggedText);
         }
       } catch (e) {
         setStatus('error', 'Erreur reseau', 'Connexion API indisponible');
@@ -654,104 +661,135 @@ def create_app() -> Flask:
 
     @app.post("/pointage")
     def pointage() -> tuple[object, int]:
-        sample = _capture_with_face()
-        if not sample.get("ok", False):
-            report_event(
-                "recognition_failed",
-                settings,
-                status="error",
-                message="Aucun visage détecté avant identification" if sample.get("error_code") == "no_face" else "Capture échouée avant identification",
-                details={"stage": "capture_or_face", "sample": sample},
-            )
-            if sample.get("error_code") == "no_face":
-                return jsonify({"ok": False, "matched": False, "error": "Aucun visage détecté"}), 422
-            return jsonify({"ok": False, "matched": False, "error": "Capture échouée"}), 503
-
-        frame = sample["frame"]
-        face_result = sample["face"]
-        face_crop = face_result.pop("face_crop")
-
-        if settings.liveness_enabled:
-            liveness_result = check_liveness(
-                frame=frame,
-                face_bbox=face_result["primary_face"],
-                model_dir=settings.liveness_model_dir,
-                threshold=settings.liveness_threshold,
-                live_class_idx=settings.liveness_live_class_idx,
-            )
-            if not liveness_result.get("ok", False):
-                report_event(
-                    "recognition_failed",
-                    settings,
-                    status="error",
-                    message="Liveness indisponible, pointage bloqué",
-                    details={"stage": "liveness", "liveness": liveness_result},
-                )
-                return jsonify({
-                    "ok": False,
-                    "matched": False,
-                    "error": "Liveness indisponible, pointage bloqué",
-                    "liveness_details": liveness_result,
-                }), 503
-            if not liveness_result.get("is_live", True):
-                report_event(
-                    "spoof_attempt",
-                    settings,
-                    status="blocked",
-                    message="Tentative d'usurpation détectée par la liveness",
-                    details={
-                        "stage": "liveness",
-                        "liveness_score": liveness_result.get("score"),
-                        "liveness": liveness_result,
-                    },
-                )
-                return jsonify({
-                    "ok": False,
-                    "matched": False,
-                    "error": "Tentative d'usurpation détectée",
-                    "liveness_score": liveness_result.get("score"),
-                }), 401
-
-        embedding_result = generate_embedding(
-            frame=frame,
-            settings=settings,
-            target_bbox=face_result.get("primary_face"),
-            fallback_face_crop=face_crop,
+      sample = _capture_with_face()
+      if not sample.get("ok", False):
+        event_result = report_event(
+          "recognition_failed",
+          settings,
+          status="error",
+          message="Aucun visage détecté avant identification" if sample.get("error_code") == "no_face" else "Capture échouée avant identification",
+          details={"stage": "capture_or_face", "sample": sample},
         )
-        if not embedding_result.get("ok", False):
-            report_event(
-                "recognition_failed",
-                settings,
-                status="error",
-                message="Échec de génération d'embedding",
-                details={"stage": "embedding", "embedding": embedding_result},
-            )
-            return jsonify({"ok": False, "matched": False, "error": "Échec d'embedding"}), 503
-
-        embedding_vector = embedding_result.pop("embedding")
-        api_result = identify_embedding(embedding_vector, settings)
-        api_response = api_result.get("response", {})
-        if api_result.get("ok") and api_response.get("matched"):
-            return jsonify({
-                "ok": True,
-                "matched": True,
-                "full_name": api_response.get("full_name"),
-                "pointage_type": api_response.get("pointage_type"),
-                "pointage_id": api_response.get("pointage_id"),
-            }), 200
-
-        report_event(
-            "unknown_user" if api_result.get("status_code") in {401, 404} else "recognition_failed",
-            settings,
-            status="rejected",
-            message=api_response.get("error", "Identité non reconnue"),
-            details={"stage": "identify", "identify": api_result},
-        )
-        return jsonify({
+        if sample.get("error_code") == "no_face":
+          return jsonify({
             "ok": False,
             "matched": False,
-            "error": api_response.get("error", "Identité non reconnue"),
-        }), 401
+            "error": "Aucun visage détecté",
+            "error_type": "no_face_detected",
+            "event_logged": bool(event_result.get("ok")),
+            "event_result": event_result,
+          }), 422
+        return jsonify({
+          "ok": False,
+          "matched": False,
+          "error": "Capture échouée",
+          "error_type": "recognition_failed",
+          "event_logged": bool(event_result.get("ok")),
+          "event_result": event_result,
+        }), 503
+
+      frame = sample["frame"]
+      face_result = sample["face"]
+      face_crop = face_result.pop("face_crop")
+
+      if settings.liveness_enabled:
+        liveness_result = check_liveness(
+          frame=frame,
+          face_bbox=face_result["primary_face"],
+          model_dir=settings.liveness_model_dir,
+          threshold=settings.liveness_threshold,
+          live_class_idx=settings.liveness_live_class_idx,
+        )
+        if not liveness_result.get("ok", False):
+          event_result = report_event(
+            "recognition_failed",
+            settings,
+            status="error",
+            message="Liveness indisponible, pointage bloqué",
+            details={"stage": "liveness", "liveness": liveness_result},
+          )
+          return jsonify({
+            "ok": False,
+            "matched": False,
+            "error": "Liveness indisponible, pointage bloqué",
+            "error_type": "recognition_failed",
+            "liveness_details": liveness_result,
+            "event_logged": bool(event_result.get("ok")),
+            "event_result": event_result,
+          }), 503
+        if not liveness_result.get("is_live", True):
+          event_result = report_event(
+            "spoof_attempt",
+            settings,
+            status="blocked",
+            message="Tentative d'usurpation détectée par la liveness",
+            details={
+              "stage": "liveness",
+              "liveness_score": liveness_result.get("score"),
+              "liveness": liveness_result,
+            },
+          )
+          return jsonify({
+            "ok": False,
+            "matched": False,
+            "error": "Tentative d'usurpation détectée",
+            "error_type": "spoof_attempt",
+            "liveness_score": liveness_result.get("score"),
+            "event_logged": bool(event_result.get("ok")),
+            "event_result": event_result,
+          }), 401
+
+      embedding_result = generate_embedding(
+        frame=frame,
+        settings=settings,
+        target_bbox=face_result.get("primary_face"),
+        fallback_face_crop=face_crop,
+      )
+      if not embedding_result.get("ok", False):
+        event_result = report_event(
+          "recognition_failed",
+          settings,
+          status="error",
+          message="Échec de génération d'embedding",
+          details={"stage": "embedding", "embedding": embedding_result},
+        )
+        return jsonify({
+          "ok": False,
+          "matched": False,
+          "error": "Échec d'embedding",
+          "error_type": "recognition_failed",
+          "event_logged": bool(event_result.get("ok")),
+          "event_result": event_result,
+        }), 503
+
+      embedding_vector = embedding_result.pop("embedding")
+      api_result = identify_embedding(embedding_vector, settings)
+      api_response = api_result.get("response", {})
+      if api_result.get("ok") and api_response.get("matched"):
+        return jsonify({
+          "ok": True,
+          "matched": True,
+          "full_name": api_response.get("full_name"),
+          "pointage_type": api_response.get("pointage_type"),
+          "pointage_id": api_response.get("pointage_id"),
+        }), 200
+
+      event_type = "unknown_user" if api_result.get("status_code") in {401, 404} else "recognition_failed"
+      event_result = report_event(
+        event_type,
+        settings,
+        status="rejected",
+        message=api_response.get("error", "Identité non reconnue"),
+        details={"stage": "identify", "identify": api_result},
+      )
+      return jsonify({
+        "ok": False,
+        "matched": False,
+        "error": api_response.get("error", "Identité non reconnue"),
+        "error_type": event_type,
+        "event_logged": bool(event_result.get("ok")),
+        "event_result": event_result,
+      }), 401
 
     return app
 
