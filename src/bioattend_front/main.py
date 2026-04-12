@@ -499,6 +499,28 @@ def create_app() -> Flask:
         )
         return normalized_type, event_result
 
+    def _is_reliable_face_result(face_result: dict, frame_w: int, frame_h: int) -> bool:
+        primary = face_result.get("primary_face") or {}
+        guard = face_result.get("guard") or {}
+
+        w = int(primary.get("w", 0))
+        h = int(primary.get("h", 0))
+        x = int(primary.get("x", 0))
+        y = int(primary.get("y", 0))
+
+        if w < 72 or h < 72:
+            return False
+
+        if int(guard.get("centered_candidates", 0)) <= 0:
+            return False
+
+        margin_x = max(2, int(frame_w * 0.02))
+        margin_y = max(2, int(frame_h * 0.02))
+        if x <= margin_x or y <= margin_y or (x + w) >= (frame_w - margin_x) or (y + h) >= (frame_h - margin_y):
+            return False
+
+        return True
+
     def _capture_with_face(max_attempts: int = 6, delay_ms: int = 70) -> dict:
         last_capture: dict | None = None
         last_face: dict | None = None
@@ -513,25 +535,31 @@ def create_app() -> Flask:
                 frame = capture_result.pop("frame")
                 face_result = detect_and_crop_face(frame)
                 if face_result.get("ok", False):
-                    current_bbox = face_result.get("primary_face") or {}
-                    if pending_bbox is None:
-                        pending_bbox = current_bbox
-                        face_result.pop("face_crop", None)
-                        last_capture = capture_result
-                        last_face = face_result
+                    frame_h, frame_w = frame.shape[:2]
+                    if not _is_reliable_face_result(face_result, frame_w, frame_h):
+                        pending_bbox = None
+                        face_result["ok"] = False
+                        face_result["error"] = "No reliable centered face detected."
                     else:
-                        iou = _bbox_iou(pending_bbox, current_bbox)
-                        if iou >= 0.18:
-                            return {
-                                "ok": True,
-                                "frame": frame,
-                                "camera": capture_result.get("camera"),
-                                "platform": capture_result.get("platform"),
-                                "face": face_result,
-                                "attempts_used": attempt_idx + 1,
-                                "face_confirmed_iou": round(iou, 4),
-                            }
-                        pending_bbox = current_bbox
+                        current_bbox = face_result.get("primary_face") or {}
+                        if pending_bbox is None:
+                            pending_bbox = current_bbox
+                            face_result.pop("face_crop", None)
+                            last_capture = capture_result
+                            last_face = face_result
+                        else:
+                            iou = _bbox_iou(pending_bbox, current_bbox)
+                            if iou >= 0.18:
+                                return {
+                                    "ok": True,
+                                    "frame": frame,
+                                    "camera": capture_result.get("camera"),
+                                    "platform": capture_result.get("platform"),
+                                    "face": face_result,
+                                    "attempts_used": attempt_idx + 1,
+                                    "face_confirmed_iou": round(iou, 4),
+                                }
+                            pending_bbox = current_bbox
                 face_result.pop("face_crop", None)
                 last_capture = capture_result
                 last_face = face_result
