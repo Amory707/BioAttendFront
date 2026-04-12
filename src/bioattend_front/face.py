@@ -10,6 +10,10 @@ import numpy as np
 _CASCADE_PATH = cv2.data.haarcascades + "haarcascade_frontalface_default.xml"
 _FACE_CASCADE = cv2.CascadeClassifier(_CASCADE_PATH)
 
+# Paramètres de cadrage utilisés seulement comme métriques de diagnostic.
+_MIN_FACE_SIZE_PX = 96
+_CENTER_TOLERANCE_RATIO = 0.35
+
 
 def _to_bbox(face: tuple[int, int, int, int]) -> dict[str, int]:
     x, y, w, h = face
@@ -18,6 +22,38 @@ def _to_bbox(face: tuple[int, int, int, int]) -> dict[str, int]:
 
 def _largest_face(faces: list[tuple[int, int, int, int]]) -> tuple[int, int, int, int]:
     return max(faces, key=lambda f: int(f[2]) * int(f[3]))
+
+
+def _select_primary_face(
+    faces: list[tuple[int, int, int, int]],
+    frame_w: int,
+    frame_h: int,
+) -> tuple[tuple[int, int, int, int], dict[str, Any]]:
+    cx = frame_w / 2.0
+    cy = frame_h / 2.0
+    tol_x = frame_w * _CENTER_TOLERANCE_RATIO
+    tol_y = frame_h * _CENTER_TOLERANCE_RATIO
+
+    valid_size = [f for f in faces if int(f[2]) >= _MIN_FACE_SIZE_PX and int(f[3]) >= _MIN_FACE_SIZE_PX]
+
+    centered = []
+    for f in valid_size:
+        x, y, w, h = f
+        fx = x + w / 2.0
+        fy = y + h / 2.0
+        if abs(fx - cx) <= tol_x and abs(fy - cy) <= tol_y:
+            centered.append(f)
+
+    # Ne jamais bloquer ici: on préfère un candidat pour laisser la liveness décider.
+    candidates = centered if centered else (valid_size if valid_size else faces)
+    primary = _largest_face(candidates)
+    return primary, {
+        "min_face_size_px": _MIN_FACE_SIZE_PX,
+        "center_tolerance_ratio": _CENTER_TOLERANCE_RATIO,
+        "centered_candidates": len(centered),
+        "size_candidates": len(valid_size),
+        "all_candidates": len(faces),
+    }
 
 
 def _run_haar(
@@ -85,9 +121,9 @@ def detect_and_crop_face(frame: Any) -> dict[str, Any]:
             "error": "No face detected in frame.",
         }
 
-    primary = _largest_face(faces)
-    x, y, w, h = primary
     height, width = frame.shape[:2]
+    primary, guard = _select_primary_face(faces, width, height)
+    x, y, w, h = primary
 
     x1 = max(0, x)
     y1 = max(0, y)
@@ -109,6 +145,7 @@ def detect_and_crop_face(frame: Any) -> dict[str, Any]:
         "face_count": len(faces),
         "detector": "opencv_haar",
         "matched_pass": matched_pass,
+        "guard": guard,
         "faces": [_to_bbox(face) for face in faces],
         "primary_face": _to_bbox(primary),
         "crop_shape": [int(face_crop.shape[0]), int(face_crop.shape[1])],
