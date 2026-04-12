@@ -49,10 +49,13 @@ def detect_and_crop_face(frame: Any) -> dict[str, Any]:
     # Multi-pass OpenCV Haar pour être plus robuste en conditions réelles
     # (lumière variable, visage un peu éloigné, léger mouvement).
     gray_eq = cv2.equalizeHist(gray)
+    clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+    gray_clahe = clahe.apply(gray)
     passes = [
         {"gray": gray, "scale_factor": 1.10, "min_neighbors": 5, "min_size": (80, 80)},
         {"gray": gray_eq, "scale_factor": 1.08, "min_neighbors": 4, "min_size": (64, 64)},
         {"gray": gray_eq, "scale_factor": 1.05, "min_neighbors": 3, "min_size": (48, 48)},
+        {"gray": gray_clahe, "scale_factor": 1.03, "min_neighbors": 2, "min_size": (36, 36)},
     ]
 
     faces: list[tuple[int, int, int, int]] = []
