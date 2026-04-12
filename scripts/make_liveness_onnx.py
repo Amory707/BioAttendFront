@@ -23,6 +23,7 @@ import importlib
 import os
 import pathlib
 import sys
+from typing import Any
 
 
 def parse_args() -> argparse.Namespace:
@@ -40,6 +41,38 @@ def parse_args() -> argparse.Namespace:
     return p.parse_args()
 
 
+def _normalize_state_dict(raw_state: Any) -> dict[str, Any]:
+    """Normalise différents formats de checkpoints PyTorch vers un state_dict brut."""
+    state = raw_state
+    if isinstance(state, dict):
+        if "state_dict" in state and isinstance(state["state_dict"], dict):
+            state = state["state_dict"]
+        elif "model" in state and isinstance(state["model"], dict):
+            state = state["model"]
+
+    if not isinstance(state, dict):
+        raise ValueError("Checkpoint non supporté: state_dict introuvable")
+
+    normalized: dict[str, Any] = {}
+    for key, value in state.items():
+        new_key = key[7:] if key.startswith("module.") else key
+        normalized[new_key] = value
+    return normalized
+
+
+def _build_model(model_cls: Any, h_in: int, w_in: int, num_classes: int, get_kernel: Any) -> Any:
+    """Instancie le modèle avec signature compatible Silent-Face."""
+    kwargs = {"num_classes": num_classes, "img_channel": 3}
+    if get_kernel is not None:
+        kwargs["conv6_kernel"] = get_kernel(h_in, w_in)
+    try:
+        return model_cls(**kwargs)
+    except TypeError:
+        # Fallback pour variantes de classes qui n'acceptent pas tous les kwargs.
+        kwargs.pop("img_channel", None)
+        return model_cls(**kwargs)
+
+
 def convert(sfa_path: str, output_dir: str) -> None:
     import torch  # noqa: PLC0415
 
@@ -52,6 +85,7 @@ def convert(sfa_path: str, output_dir: str) -> None:
     try:
         utility = importlib.import_module("src.utility")
         parse_model_name = utility.parse_model_name
+        get_kernel = getattr(utility, "get_kernel", None)
     except (ImportError, AttributeError) as exc:
         print(f"❌ Impossible d'importer src.utility depuis {sfa_path}: {exc}")
         print("   Vérifiez que --sfa-path pointe vers le dépôt cloné.")
@@ -97,14 +131,16 @@ def convert(sfa_path: str, output_dir: str) -> None:
         model = None
         for num_classes in (3, 2):
             try:
-                candidate = model_cls(num_classes=num_classes, img_channel=3)
-                state = torch.load(pth_path, map_location="cpu")
+                candidate = _build_model(model_cls, int(h_in), int(w_in), num_classes, get_kernel)
+                raw_state = torch.load(pth_path, map_location="cpu")
+                state = _normalize_state_dict(raw_state)
                 candidate.load_state_dict(state)
                 candidate.eval()
                 model = candidate
                 print(f"  ✅ Chargé avec num_classes={num_classes}")
                 break
-            except RuntimeError:
+            except (RuntimeError, ValueError, TypeError) as exc:
+                print(f"  [TRY] num_classes={num_classes} a échoué: {exc}")
                 continue
 
         if model is None:

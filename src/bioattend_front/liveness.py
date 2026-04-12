@@ -18,7 +18,7 @@ except ImportError:  # pragma: no cover
 # {scale}_{width}x{height}_{Arch}.onnx
 _MODEL_CONFIGS: list[dict[str, Any]] = [
     {"filename": "2.7_80x80_MiniFASNetV2.onnx",  "scale": 2.7, "input_size": 80},
-    {"filename": "4_0_0_80x80_MiniFASNetV4.onnx", "scale": 4.0, "input_size": 80},
+    {"filename": "4_0_0_80x80_MiniFASNetV1SE.onnx", "scale": 4.0, "input_size": 80},
 ]
 
 # Cache des sessions ONNX (une par fichier de modèle).
