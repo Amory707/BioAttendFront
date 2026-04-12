@@ -30,6 +30,7 @@ load_dotenv(_resolve_env_file())
 class Settings:
     debug: bool
     kiosk_mode: bool
+    device_name: str
     camera_mirror: bool
     camera_swap_rb: bool
     camera_jpeg_quality: int
@@ -48,6 +49,7 @@ class Settings:
     insightface_det_width: int
     insightface_det_height: int
     server_url: str
+    events_url: str
     api_token: str
     api_timeout_seconds: int
 
@@ -56,6 +58,7 @@ class Settings:
         return cls(
             debug=_to_bool(os.getenv("DEBUG"), default=False),
             kiosk_mode=_to_bool(os.getenv("KIOSK_MODE"), default=True),
+            device_name=os.getenv("DEVICE_NAME", "bioattend-pi").strip(),
             camera_mirror=_to_bool(os.getenv("CAMERA_MIRROR"), default=True),
             camera_swap_rb=_to_bool(os.getenv("CAMERA_SWAP_RB"), default=False),
             camera_jpeg_quality=max(40, min(95, _to_int(os.getenv("CAMERA_JPEG_QUALITY"), default=68))),
@@ -80,6 +83,7 @@ class Settings:
                 "SERVER_URL",
                 "https://bioattend.138.199.195.144.sslip.io/api/face/identify/",
             ).strip(),
+            events_url=os.getenv("EVENTS_URL", "").strip(),
             api_token=os.getenv("API_TOKEN", "").strip(),
             api_timeout_seconds=_to_int(os.getenv("API_TIMEOUT_SECONDS"), default=8),
         )

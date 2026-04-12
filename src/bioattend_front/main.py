@@ -3,7 +3,7 @@ from __future__ import annotations
 import cv2
 from flask import Flask, Response, jsonify
 
-from .api_client import identify_embedding
+from .api_client import identify_embedding, report_event
 from .camera import capture_frame, capture_frame_fast, probe_camera
 from .config import Settings
 from .embedding import generate_embedding
@@ -644,64 +644,116 @@ def create_app() -> Flask:
 
     @app.post("/pointage")
     def pointage() -> tuple[object, int]:
-        capture_result = capture_frame_fast(settings)
-        if not capture_result["ok"]:
-            return jsonify({"ok": False, "matched": False, "error": "Capture échouée"}), 503
-        frame = capture_result.pop("frame")
-        face_result = detect_and_crop_face(frame)
-        if not face_result.get("ok", False):
-            face_result.pop("face_crop", None)
-            return jsonify({"ok": False, "matched": False, "error": "Aucun visage détecté"}), 422
-        face_crop = face_result.pop("face_crop")
-
-        # ── Liveness (anti-spoofing) ──────────────────────────────────────────
-        if settings.liveness_enabled:
-            liveness_result = check_liveness(
-                frame=frame,
-                face_bbox=face_result["primary_face"],
-                model_dir=settings.liveness_model_dir,
-                threshold=settings.liveness_threshold,
-                live_class_idx=settings.liveness_live_class_idx,
-            )
-            if not liveness_result.get("ok", False):
-                return jsonify({
-                    "ok": False,
-                    "matched": False,
-                    "error": "Liveness indisponible, pointage bloqué",
-                    "liveness_details": liveness_result,
-                }), 503
-            if not liveness_result.get("is_live", True):
-                return jsonify({
-                    "ok": False,
-                    "matched": False,
-                    "error": "Tentative d'usurpation détectée",
-                    "liveness_score": liveness_result.get("score"),
-                }), 401
-
-        embedding_result = generate_embedding(
-            frame=frame,
-            settings=settings,
-            target_bbox=face_result.get("primary_face"),
-            fallback_face_crop=face_crop,
+      capture_result = capture_frame_fast(settings)
+      if not capture_result["ok"]:
+        report_event(
+          "recognition_failed",
+          settings,
+          status="error",
+          message="Capture échouée avant identification",
+          details={"stage": "capture", "capture": capture_result},
         )
-        if not embedding_result.get("ok", False):
-            return jsonify({"ok": False, "matched": False, "error": "Échec d'embedding"}), 503
-        embedding_vector = embedding_result.pop("embedding")
-        api_result = identify_embedding(embedding_vector, settings)
-        api_response = api_result.get("response", {})
-        if api_result.get("ok") and api_response.get("matched"):
-            return jsonify({
-                "ok": True,
-                "matched": True,
-                "full_name": api_response.get("full_name"),
-                "pointage_type": api_response.get("pointage_type"),
-                "pointage_id": api_response.get("pointage_id"),
-            }), 200
-        return jsonify({
+        return jsonify({"ok": False, "matched": False, "error": "Capture échouée"}), 503
+
+      frame = capture_result.pop("frame")
+      face_result = detect_and_crop_face(frame)
+      if not face_result.get("ok", False):
+        face_result.pop("face_crop", None)
+        report_event(
+          "recognition_failed",
+          settings,
+          status="error",
+          message="Aucun visage détecté avant identification",
+          details={"stage": "face_detection", "face": face_result},
+        )
+        return jsonify({"ok": False, "matched": False, "error": "Aucun visage détecté"}), 422
+
+      face_crop = face_result.pop("face_crop")
+
+      if settings.liveness_enabled:
+        liveness_result = check_liveness(
+          frame=frame,
+          face_bbox=face_result["primary_face"],
+          model_dir=settings.liveness_model_dir,
+          threshold=settings.liveness_threshold,
+          live_class_idx=settings.liveness_live_class_idx,
+        )
+        if not liveness_result.get("ok", False):
+          report_event(
+            "recognition_failed",
+            settings,
+            status="error",
+            message="Liveness indisponible, pointage bloqué",
+            details={"stage": "liveness", "liveness": liveness_result},
+          )
+          return jsonify({
             "ok": False,
             "matched": False,
-            "error": api_response.get("error", "Identité non reconnue"),
-        }), 401
+            "error": "Liveness indisponible, pointage bloqué",
+            "liveness_details": liveness_result,
+          }), 503
+        if not liveness_result.get("is_live", True):
+          report_event(
+            "spoof_attempt",
+            settings,
+            status="blocked",
+            message="Tentative d'usurpation détectée par la liveness",
+            details={
+              "stage": "liveness",
+              "liveness_score": liveness_result.get("score"),
+              "liveness": liveness_result,
+            },
+          )
+          return jsonify({
+            "ok": False,
+            "matched": False,
+            "error": "Tentative d'usurpation détectée",
+            "liveness_score": liveness_result.get("score"),
+          }), 401
+
+      embedding_result = generate_embedding(
+        frame=frame,
+        settings=settings,
+        target_bbox=face_result.get("primary_face"),
+        fallback_face_crop=face_crop,
+      )
+      if not embedding_result.get("ok", False):
+        report_event(
+          "recognition_failed",
+          settings,
+          status="error",
+          message="Échec de génération d'embedding",
+          details={"stage": "embedding", "embedding": embedding_result},
+        )
+        return jsonify({"ok": False, "matched": False, "error": "Échec d'embedding"}), 503
+
+      embedding_vector = embedding_result.pop("embedding")
+      api_result = identify_embedding(embedding_vector, settings)
+      api_response = api_result.get("response", {})
+      if api_result.get("ok") and api_response.get("matched"):
+        return jsonify({
+          "ok": True,
+          "matched": True,
+          "full_name": api_response.get("full_name"),
+          "pointage_type": api_response.get("pointage_type"),
+          "pointage_id": api_response.get("pointage_id"),
+        }), 200
+
+      report_event(
+        "unknown_user" if api_result.get("status_code") in {401, 404} else "recognition_failed",
+        settings,
+        status="rejected",
+        message=api_response.get("error", "Identité non reconnue"),
+        details={
+          "stage": "identify",
+          "identify": api_result,
+        },
+      )
+      return jsonify({
+        "ok": False,
+        "matched": False,
+        "error": api_response.get("error", "Identité non reconnue"),
+      }), 401
 
     return app
 

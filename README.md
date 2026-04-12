@@ -102,8 +102,10 @@ INSIGHTFACE_DET_HEIGHT=640
 
 # ── API distante ──────────────────────────────────────────────────
 SERVER_URL=https://bioattend.138.199.195.144.sslip.io/api/face/identify/
+EVENTS_URL=https://bioattend.138.199.195.144.sslip.io/api/front/events/
 API_TOKEN=votre_token_ici
 API_TIMEOUT_SECONDS=8
+DEVICE_NAME=bioattend-pi
 ```
 
 ### Variables importantes
@@ -116,6 +118,8 @@ API_TIMEOUT_SECONDS=8
 | `CAMERA_JPEG_QUALITY` | Qualité JPEG du flux live | `60-70` sur Raspberry Pi pour plus de fluidité |
 | `API_TOKEN` | Token d'authentification de l'API | Récupérer auprès du responsable backend |
 | `SERVER_URL` | URL de l'endpoint d'identification | Ne pas modifier sauf changement de déploiement |
+| `EVENTS_URL` | URL de journalisation des tentatives front | Laisser vide si le backend ne l'expose pas encore |
+| `DEVICE_NAME` | Nom logique de la pointeuse | `bioattend-pi` ou un identifiant unique |
 | `DEBUG` | Active le mode debug Flask | `false` en production |
 | `KIOSK_MODE` | Active le comportement borne (plein écran auto) | `true` sur Raspberry Pi |
 
