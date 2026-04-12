@@ -395,6 +395,7 @@ _UI_HTML = """\
         } else {
           var errorType = data.error_type || 'recognition_failed';
           var titleByType = {
+            no_face_detected: 'Visage non detecte',
             recognition_failed: 'Echec de reconnaissance',
             unknown_user: 'Utilisateur inconnu',
             spoof_attempt: 'Tentative d\'usurpation detectee'
@@ -457,6 +458,24 @@ def create_app() -> Flask:
     settings = Settings.from_env()
     app = Flask(__name__)
     app.config["BIOATTEND_SETTINGS"] = settings
+    platform_event_types = {"recognition_failed", "unknown_user", "spoof_attempt"}
+
+    def _emit_platform_event(
+        event_type: str,
+        *,
+        status: str,
+        message: str,
+        details: dict | None = None,
+    ) -> tuple[str, dict]:
+        normalized_type = event_type if event_type in platform_event_types else "recognition_failed"
+        event_result = report_event(
+            normalized_type,
+            settings,
+            status=status,
+            message=message,
+            details=details,
+        )
+        return normalized_type, event_result
 
     def _capture_with_face(max_attempts: int = 6, delay_ms: int = 70) -> dict:
         last_capture: dict | None = None
@@ -663,9 +682,8 @@ def create_app() -> Flask:
     def pointage() -> tuple[object, int]:
       sample = _capture_with_face()
       if not sample.get("ok", False):
-        event_result = report_event(
+        event_type, event_result = _emit_platform_event(
           "recognition_failed",
-          settings,
           status="error",
           message="Aucun visage détecté avant identification" if sample.get("error_code") == "no_face" else "Capture échouée avant identification",
           details={"stage": "capture_or_face", "sample": sample},
@@ -676,6 +694,7 @@ def create_app() -> Flask:
             "matched": False,
             "error": "Aucun visage détecté",
             "error_type": "no_face_detected",
+            "platform_event_type": event_type,
             "event_logged": bool(event_result.get("ok")),
             "event_result": event_result,
           }), 422
@@ -684,6 +703,7 @@ def create_app() -> Flask:
           "matched": False,
           "error": "Capture échouée",
           "error_type": "recognition_failed",
+          "platform_event_type": event_type,
           "event_logged": bool(event_result.get("ok")),
           "event_result": event_result,
         }), 503
@@ -701,9 +721,8 @@ def create_app() -> Flask:
           live_class_idx=settings.liveness_live_class_idx,
         )
         if not liveness_result.get("ok", False):
-          event_result = report_event(
+          event_type, event_result = _emit_platform_event(
             "recognition_failed",
-            settings,
             status="error",
             message="Liveness indisponible, pointage bloqué",
             details={"stage": "liveness", "liveness": liveness_result},
@@ -713,14 +732,14 @@ def create_app() -> Flask:
             "matched": False,
             "error": "Liveness indisponible, pointage bloqué",
             "error_type": "recognition_failed",
+            "platform_event_type": event_type,
             "liveness_details": liveness_result,
             "event_logged": bool(event_result.get("ok")),
             "event_result": event_result,
           }), 503
         if not liveness_result.get("is_live", True):
-          event_result = report_event(
+          event_type, event_result = _emit_platform_event(
             "spoof_attempt",
-            settings,
             status="blocked",
             message="Tentative d'usurpation détectée par la liveness",
             details={
@@ -734,6 +753,7 @@ def create_app() -> Flask:
             "matched": False,
             "error": "Tentative d'usurpation détectée",
             "error_type": "spoof_attempt",
+            "platform_event_type": event_type,
             "liveness_score": liveness_result.get("score"),
             "event_logged": bool(event_result.get("ok")),
             "event_result": event_result,
@@ -746,9 +766,8 @@ def create_app() -> Flask:
         fallback_face_crop=face_crop,
       )
       if not embedding_result.get("ok", False):
-        event_result = report_event(
+        event_type, event_result = _emit_platform_event(
           "recognition_failed",
-          settings,
           status="error",
           message="Échec de génération d'embedding",
           details={"stage": "embedding", "embedding": embedding_result},
@@ -758,6 +777,7 @@ def create_app() -> Flask:
           "matched": False,
           "error": "Échec d'embedding",
           "error_type": "recognition_failed",
+          "platform_event_type": event_type,
           "event_logged": bool(event_result.get("ok")),
           "event_result": event_result,
         }), 503
@@ -775,9 +795,8 @@ def create_app() -> Flask:
         }), 200
 
       event_type = "unknown_user" if api_result.get("status_code") in {401, 404} else "recognition_failed"
-      event_result = report_event(
+      event_type, event_result = _emit_platform_event(
         event_type,
-        settings,
         status="rejected",
         message=api_response.get("error", "Identité non reconnue"),
         details={"stage": "identify", "identify": api_result},
@@ -787,6 +806,7 @@ def create_app() -> Flask:
         "matched": False,
         "error": api_response.get("error", "Identité non reconnue"),
         "error_type": event_type,
+        "platform_event_type": event_type,
         "event_logged": bool(event_result.get("ok")),
         "event_result": event_result,
       }), 401

@@ -10,8 +10,9 @@ import numpy as np
 _CASCADE_PATH = cv2.data.haarcascades + "haarcascade_frontalface_default.xml"
 _FACE_CASCADE = cv2.CascadeClassifier(_CASCADE_PATH)
 
-# Paramètres de cadrage utilisés seulement comme métriques de diagnostic.
-_MIN_FACE_SIZE_PX = 96
+# Taille minimale (en px) qu'un côté du visage doit atteindre pour être
+# considéré comme valide. En dessous, on retourne "aucun visage".
+_MIN_FACE_SIZE_PX = 64
 _CENTER_TOLERANCE_RATIO = 0.35
 
 
@@ -28,13 +29,26 @@ def _select_primary_face(
     faces: list[tuple[int, int, int, int]],
     frame_w: int,
     frame_h: int,
-) -> tuple[tuple[int, int, int, int], dict[str, Any]]:
+) -> tuple[tuple[int, int, int, int] | None, dict[str, Any]]:
     cx = frame_w / 2.0
     cy = frame_h / 2.0
     tol_x = frame_w * _CENTER_TOLERANCE_RATIO
     tol_y = frame_h * _CENTER_TOLERANCE_RATIO
 
     valid_size = [f for f in faces if int(f[2]) >= _MIN_FACE_SIZE_PX and int(f[3]) >= _MIN_FACE_SIZE_PX]
+
+    guard: dict[str, Any] = {
+        "min_face_size_px": _MIN_FACE_SIZE_PX,
+        "center_tolerance_ratio": _CENTER_TOLERANCE_RATIO,
+        "all_candidates": len(faces),
+        "size_candidates": len(valid_size),
+    }
+
+    # Si aucun visage ne dépasse le seuil minimal, on refuse proprement.
+    if not valid_size:
+        guard["centered_candidates"] = 0
+        guard["rejected_too_small"] = True
+        return None, guard
 
     centered = []
     for f in valid_size:
@@ -44,16 +58,12 @@ def _select_primary_face(
         if abs(fx - cx) <= tol_x and abs(fy - cy) <= tol_y:
             centered.append(f)
 
-    # Ne jamais bloquer ici: on préfère un candidat pour laisser la liveness décider.
-    candidates = centered if centered else (valid_size if valid_size else faces)
+    guard["centered_candidates"] = len(centered)
+    guard["rejected_too_small"] = False
+
+    candidates = centered if centered else valid_size
     primary = _largest_face(candidates)
-    return primary, {
-        "min_face_size_px": _MIN_FACE_SIZE_PX,
-        "center_tolerance_ratio": _CENTER_TOLERANCE_RATIO,
-        "centered_candidates": len(centered),
-        "size_candidates": len(valid_size),
-        "all_candidates": len(faces),
-    }
+    return primary, guard
 
 
 def _run_haar(
@@ -123,6 +133,16 @@ def detect_and_crop_face(frame: Any) -> dict[str, Any]:
 
     height, width = frame.shape[:2]
     primary, guard = _select_primary_face(faces, width, height)
+
+    if primary is None:
+        return {
+            "ok": False,
+            "face_count": len(faces),
+            "duration_ms": duration_ms,
+            "guard": guard,
+            "error": "No face detected in frame.",
+        }
+
     x, y, w, h = primary
 
     x1 = max(0, x)
