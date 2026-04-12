@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import time
 import cv2
 from flask import Flask, Response, jsonify
 
@@ -450,6 +451,45 @@ def create_app() -> Flask:
     app = Flask(__name__)
     app.config["BIOATTEND_SETTINGS"] = settings
 
+    def _capture_with_face(max_attempts: int = 6, delay_ms: int = 70) -> dict:
+        last_capture: dict | None = None
+        last_face: dict | None = None
+        for attempt_idx in range(max_attempts):
+            capture_result = capture_frame_fast(settings)
+            if not capture_result.get("ok", False):
+                capture_result.pop("frame", None)
+                last_capture = capture_result
+            else:
+                frame = capture_result.pop("frame")
+                face_result = detect_and_crop_face(frame)
+                if face_result.get("ok", False):
+                    return {
+                        "ok": True,
+                        "frame": frame,
+                        "camera": capture_result.get("camera"),
+                        "platform": capture_result.get("platform"),
+                        "face": face_result,
+                        "attempts_used": attempt_idx + 1,
+                    }
+                face_result.pop("face_crop", None)
+                last_capture = capture_result
+                last_face = face_result
+
+            if attempt_idx < max_attempts - 1 and delay_ms > 0:
+                time.sleep(delay_ms / 1000)
+
+        if last_capture is None:
+            last_capture = {}
+        return {
+            "ok": False,
+            "error_code": "no_face" if last_face is not None else "capture_failed",
+            "error": "No face detected in sampled frames." if last_face is not None else "Capture failed.",
+            "camera": last_capture.get("camera"),
+            "platform": last_capture.get("platform"),
+            "face": last_face,
+            "attempts_used": max_attempts,
+        }
+
     @app.get("/health")
     def health() -> tuple[object, int]:
         return jsonify({"ok": True, "service": "bioattend-front"}), 200
@@ -468,46 +508,32 @@ def create_app() -> Flask:
     @app.post("/diagnostics/face")
     @app.get("/diagnostics/face")
     def diagnostics_face() -> tuple[object, int]:
-        capture_result = capture_frame_fast(settings)
-        if not capture_result["ok"]:
-            capture_result.pop("frame", None)
-            return jsonify(capture_result), 503
+        sample = _capture_with_face()
+        if not sample.get("ok", False):
+            status_code = 422 if sample.get("error_code") == "no_face" else 503
+            return jsonify(sample), status_code
 
-        frame = capture_result.pop("frame")
-        face_result = detect_and_crop_face(frame)
+        face_result = sample["face"]
         face_result.pop("face_crop", None)
-
         response = {
             "ok": face_result.get("ok", False),
-            "camera": capture_result.get("camera"),
+            "camera": sample.get("camera"),
             "face": face_result,
-            "platform": capture_result.get("platform"),
+            "platform": sample.get("platform"),
+            "attempts_used": sample.get("attempts_used"),
         }
-
-        if response["ok"]:
-            return jsonify(response), 200
-        return jsonify(response), 422
+        return jsonify(response), 200
 
     @app.post("/diagnostics/embedding")
     @app.get("/diagnostics/embedding")
     def diagnostics_embedding() -> tuple[object, int]:
-        capture_result = capture_frame_fast(settings)
-        if not capture_result["ok"]:
-            capture_result.pop("frame", None)
-            return jsonify(capture_result), 503
+        sample = _capture_with_face()
+        if not sample.get("ok", False):
+            status_code = 422 if sample.get("error_code") == "no_face" else 503
+            return jsonify(sample), status_code
 
-        frame = capture_result.pop("frame")
-        face_result = detect_and_crop_face(frame)
-        if not face_result.get("ok", False):
-            face_result.pop("face_crop", None)
-            response = {
-                "ok": False,
-                "camera": capture_result.get("camera"),
-                "face": face_result,
-                "platform": capture_result.get("platform"),
-            }
-            return jsonify(response), 422
-
+        frame = sample["frame"]
+        face_result = sample["face"]
         face_crop = face_result.pop("face_crop")
         embedding_result = generate_embedding(
             frame=frame,
@@ -519,36 +545,25 @@ def create_app() -> Flask:
 
         response = {
             "ok": embedding_result.get("ok", False),
-            "camera": capture_result.get("camera"),
+            "camera": sample.get("camera"),
             "face": face_result,
             "embedding": embedding_result,
-            "platform": capture_result.get("platform"),
+            "platform": sample.get("platform"),
+            "attempts_used": sample.get("attempts_used"),
         }
-
-        if response["ok"]:
-            return jsonify(response), 200
-        return jsonify(response), 503
+        status_code = 200 if response["ok"] else 503
+        return jsonify(response), status_code
 
     @app.post("/diagnostics/identify")
     @app.get("/diagnostics/identify")
     def diagnostics_identify() -> tuple[object, int]:
-        capture_result = capture_frame_fast(settings)
-        if not capture_result["ok"]:
-            capture_result.pop("frame", None)
-            return jsonify(capture_result), 503
+        sample = _capture_with_face()
+        if not sample.get("ok", False):
+            status_code = 422 if sample.get("error_code") == "no_face" else 503
+            return jsonify(sample), status_code
 
-        frame = capture_result.pop("frame")
-        face_result = detect_and_crop_face(frame)
-        if not face_result.get("ok", False):
-            face_result.pop("face_crop", None)
-            response = {
-                "ok": False,
-                "camera": capture_result.get("camera"),
-                "face": face_result,
-                "platform": capture_result.get("platform"),
-            }
-            return jsonify(response), 422
-
+        frame = sample["frame"]
+        face_result = sample["face"]
         face_crop = face_result.pop("face_crop")
         embedding_result = generate_embedding(
             frame=frame,
@@ -560,28 +575,27 @@ def create_app() -> Flask:
             embedding_result.pop("embedding", None)
             response = {
                 "ok": False,
-                "camera": capture_result.get("camera"),
+                "camera": sample.get("camera"),
                 "face": face_result,
                 "embedding": embedding_result,
-                "platform": capture_result.get("platform"),
+                "platform": sample.get("platform"),
+                "attempts_used": sample.get("attempts_used"),
             }
             return jsonify(response), 503
 
         embedding_vector = embedding_result.pop("embedding")
         api_result = identify_embedding(embedding_vector, settings)
-
         response = {
             "ok": api_result.get("ok", False),
-            "camera": capture_result.get("camera"),
+            "camera": sample.get("camera"),
             "face": face_result,
             "embedding": embedding_result,
             "api": api_result,
-            "platform": capture_result.get("platform"),
+            "platform": sample.get("platform"),
+            "attempts_used": sample.get("attempts_used"),
         }
-
-        if response["ok"]:
-            return jsonify(response), 200
-        return jsonify(response), 503
+        status_code = 200 if response["ok"] else 503
+        return jsonify(response), status_code
 
     @app.get("/")
     def index() -> tuple[str, int, dict[str, str]]:
@@ -593,37 +607,33 @@ def create_app() -> Flask:
     @app.post("/diagnostics/liveness")
     @app.get("/diagnostics/liveness")
     def diagnostics_liveness() -> tuple[object, int]:
-      if not settings.liveness_enabled:
-        return jsonify({"ok": True, "skipped": True, "reason": "LIVENESS_ENABLED=false"}), 200
+        if not settings.liveness_enabled:
+            return jsonify({"ok": True, "skipped": True, "reason": "LIVENESS_ENABLED=false"}), 200
 
-      capture_result = capture_frame_fast(settings)
-      if not capture_result["ok"]:
-        capture_result.pop("frame", None)
-        return jsonify(capture_result), 503
+        sample = _capture_with_face()
+        if not sample.get("ok", False):
+            status_code = 422 if sample.get("error_code") == "no_face" else 503
+            return jsonify(sample), status_code
 
-      frame = capture_result.pop("frame")
-      face_result = detect_and_crop_face(frame)
-      if not face_result.get("ok", False):
+        frame = sample["frame"]
+        face_result = sample["face"]
         face_result.pop("face_crop", None)
-        return jsonify({"ok": False, "face": face_result}), 422
+        liveness_result = check_liveness(
+            frame=frame,
+            face_bbox=face_result["primary_face"],
+            model_dir=settings.liveness_model_dir,
+            threshold=settings.liveness_threshold,
+            live_class_idx=settings.liveness_live_class_idx,
+        )
 
-      face_result.pop("face_crop", None)
-      liveness_result = check_liveness(
-        frame=frame,
-        face_bbox=face_result["primary_face"],
-        model_dir=settings.liveness_model_dir,
-        threshold=settings.liveness_threshold,
-        live_class_idx=settings.liveness_live_class_idx,
-      )
-
-      response = {
-        "ok": liveness_result.get("ok", False),
-        "liveness": liveness_result,
-        "face": face_result,
-      }
-      if liveness_result.get("ok") and liveness_result.get("is_live"):
-        return jsonify(response), 200
-      return jsonify(response), 422
+        response = {
+            "ok": liveness_result.get("ok", False),
+            "liveness": liveness_result,
+            "face": face_result,
+            "attempts_used": sample.get("attempts_used"),
+        }
+        status_code = 200 if liveness_result.get("ok") and liveness_result.get("is_live") else 422
+        return jsonify(response), status_code
 
     @app.get("/snapshot")
     def snapshot() -> object:
@@ -644,116 +654,104 @@ def create_app() -> Flask:
 
     @app.post("/pointage")
     def pointage() -> tuple[object, int]:
-      capture_result = capture_frame_fast(settings)
-      if not capture_result["ok"]:
+        sample = _capture_with_face()
+        if not sample.get("ok", False):
+            report_event(
+                "recognition_failed",
+                settings,
+                status="error",
+                message="Aucun visage détecté avant identification" if sample.get("error_code") == "no_face" else "Capture échouée avant identification",
+                details={"stage": "capture_or_face", "sample": sample},
+            )
+            if sample.get("error_code") == "no_face":
+                return jsonify({"ok": False, "matched": False, "error": "Aucun visage détecté"}), 422
+            return jsonify({"ok": False, "matched": False, "error": "Capture échouée"}), 503
+
+        frame = sample["frame"]
+        face_result = sample["face"]
+        face_crop = face_result.pop("face_crop")
+
+        if settings.liveness_enabled:
+            liveness_result = check_liveness(
+                frame=frame,
+                face_bbox=face_result["primary_face"],
+                model_dir=settings.liveness_model_dir,
+                threshold=settings.liveness_threshold,
+                live_class_idx=settings.liveness_live_class_idx,
+            )
+            if not liveness_result.get("ok", False):
+                report_event(
+                    "recognition_failed",
+                    settings,
+                    status="error",
+                    message="Liveness indisponible, pointage bloqué",
+                    details={"stage": "liveness", "liveness": liveness_result},
+                )
+                return jsonify({
+                    "ok": False,
+                    "matched": False,
+                    "error": "Liveness indisponible, pointage bloqué",
+                    "liveness_details": liveness_result,
+                }), 503
+            if not liveness_result.get("is_live", True):
+                report_event(
+                    "spoof_attempt",
+                    settings,
+                    status="blocked",
+                    message="Tentative d'usurpation détectée par la liveness",
+                    details={
+                        "stage": "liveness",
+                        "liveness_score": liveness_result.get("score"),
+                        "liveness": liveness_result,
+                    },
+                )
+                return jsonify({
+                    "ok": False,
+                    "matched": False,
+                    "error": "Tentative d'usurpation détectée",
+                    "liveness_score": liveness_result.get("score"),
+                }), 401
+
+        embedding_result = generate_embedding(
+            frame=frame,
+            settings=settings,
+            target_bbox=face_result.get("primary_face"),
+            fallback_face_crop=face_crop,
+        )
+        if not embedding_result.get("ok", False):
+            report_event(
+                "recognition_failed",
+                settings,
+                status="error",
+                message="Échec de génération d'embedding",
+                details={"stage": "embedding", "embedding": embedding_result},
+            )
+            return jsonify({"ok": False, "matched": False, "error": "Échec d'embedding"}), 503
+
+        embedding_vector = embedding_result.pop("embedding")
+        api_result = identify_embedding(embedding_vector, settings)
+        api_response = api_result.get("response", {})
+        if api_result.get("ok") and api_response.get("matched"):
+            return jsonify({
+                "ok": True,
+                "matched": True,
+                "full_name": api_response.get("full_name"),
+                "pointage_type": api_response.get("pointage_type"),
+                "pointage_id": api_response.get("pointage_id"),
+            }), 200
+
         report_event(
-          "recognition_failed",
-          settings,
-          status="error",
-          message="Capture échouée avant identification",
-          details={"stage": "capture", "capture": capture_result},
-        )
-        return jsonify({"ok": False, "matched": False, "error": "Capture échouée"}), 503
-
-      frame = capture_result.pop("frame")
-      face_result = detect_and_crop_face(frame)
-      if not face_result.get("ok", False):
-        face_result.pop("face_crop", None)
-        report_event(
-          "recognition_failed",
-          settings,
-          status="error",
-          message="Aucun visage détecté avant identification",
-          details={"stage": "face_detection", "face": face_result},
-        )
-        return jsonify({"ok": False, "matched": False, "error": "Aucun visage détecté"}), 422
-
-      face_crop = face_result.pop("face_crop")
-
-      if settings.liveness_enabled:
-        liveness_result = check_liveness(
-          frame=frame,
-          face_bbox=face_result["primary_face"],
-          model_dir=settings.liveness_model_dir,
-          threshold=settings.liveness_threshold,
-          live_class_idx=settings.liveness_live_class_idx,
-        )
-        if not liveness_result.get("ok", False):
-          report_event(
-            "recognition_failed",
+            "unknown_user" if api_result.get("status_code") in {401, 404} else "recognition_failed",
             settings,
-            status="error",
-            message="Liveness indisponible, pointage bloqué",
-            details={"stage": "liveness", "liveness": liveness_result},
-          )
-          return jsonify({
-            "ok": False,
-            "matched": False,
-            "error": "Liveness indisponible, pointage bloqué",
-            "liveness_details": liveness_result,
-          }), 503
-        if not liveness_result.get("is_live", True):
-          report_event(
-            "spoof_attempt",
-            settings,
-            status="blocked",
-            message="Tentative d'usurpation détectée par la liveness",
-            details={
-              "stage": "liveness",
-              "liveness_score": liveness_result.get("score"),
-              "liveness": liveness_result,
-            },
-          )
-          return jsonify({
-            "ok": False,
-            "matched": False,
-            "error": "Tentative d'usurpation détectée",
-            "liveness_score": liveness_result.get("score"),
-          }), 401
-
-      embedding_result = generate_embedding(
-        frame=frame,
-        settings=settings,
-        target_bbox=face_result.get("primary_face"),
-        fallback_face_crop=face_crop,
-      )
-      if not embedding_result.get("ok", False):
-        report_event(
-          "recognition_failed",
-          settings,
-          status="error",
-          message="Échec de génération d'embedding",
-          details={"stage": "embedding", "embedding": embedding_result},
+            status="rejected",
+            message=api_response.get("error", "Identité non reconnue"),
+            details={"stage": "identify", "identify": api_result},
         )
-        return jsonify({"ok": False, "matched": False, "error": "Échec d'embedding"}), 503
-
-      embedding_vector = embedding_result.pop("embedding")
-      api_result = identify_embedding(embedding_vector, settings)
-      api_response = api_result.get("response", {})
-      if api_result.get("ok") and api_response.get("matched"):
         return jsonify({
-          "ok": True,
-          "matched": True,
-          "full_name": api_response.get("full_name"),
-          "pointage_type": api_response.get("pointage_type"),
-          "pointage_id": api_response.get("pointage_id"),
-        }), 200
-
-      report_event(
-        "unknown_user" if api_result.get("status_code") in {401, 404} else "recognition_failed",
-        settings,
-        status="rejected",
-        message=api_response.get("error", "Identité non reconnue"),
-        details={
-          "stage": "identify",
-          "identify": api_result,
-        },
-      )
-      return jsonify({
-        "ok": False,
-        "matched": False,
-        "error": api_response.get("error", "Identité non reconnue"),
-      }), 401
+            "ok": False,
+            "matched": False,
+            "error": api_response.get("error", "Identité non reconnue"),
+        }), 401
 
     return app
 
