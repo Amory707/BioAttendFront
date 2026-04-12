@@ -195,7 +195,9 @@ def check_liveness(
 
         try:
             region, region_bbox = _crop_square_with_reflect(frame, face_bbox, _FACENOX_BBOX_EXPANSION)
-            tensor = _preprocess_facenox(region, _FACENOX_INPUT_SIZE)
+            # Facenox demo effectue l'inférence en RGB; notre frame caméra est en BGR.
+            region_rgb = cv2.cvtColor(region, cv2.COLOR_BGR2RGB)
+            tensor = _preprocess_facenox(region_rgb, _FACENOX_INPUT_SIZE)
             session = _get_session(str(facenox_model_path))
             input_name = session.get_inputs()[0].name
             raw = session.run(None, {input_name: tensor})[0][0]

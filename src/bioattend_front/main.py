@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import time
 import cv2
-from flask import Flask, Response, jsonify
+from flask import Flask, Response, jsonify, request
 
 from .api_client import identify_embedding, report_event
 from .camera import capture_frame, capture_frame_fast, probe_camera
@@ -315,6 +315,7 @@ _UI_HTML = """\
     var kioskHint = document.getElementById('kioskHint');
     var KIOSK_MODE = __KIOSK_MODE__;
     var CAMERA_MIRROR = __CAMERA_MIRROR__;
+    var SHOW_BOXES = new URLSearchParams(window.location.search).get('boxes') === '1';
 
     var streamRunning = false;
     var streamTimer = null;
@@ -332,7 +333,7 @@ _UI_HTML = """\
       }
       clearTimeout(streamTimer);
       streamTimer = setTimeout(function() {
-        feed.src = '/snapshot?' + Date.now();
+        feed.src = '/snapshot?boxes=' + (SHOW_BOXES ? '1' : '0') + '&t=' + Date.now();
       }, delay);
     }
 
@@ -722,6 +723,50 @@ def create_app() -> Flask:
         if not capture_result["ok"]:
             return ("", 503)
         frame = capture_result["frame"]
+
+        show_boxes = request.args.get("boxes", "0") == "1"
+        if show_boxes:
+            face_result = detect_and_crop_face(frame)
+            if face_result.get("ok", False):
+                face_bbox = face_result.get("primary_face") or {}
+                x = int(face_bbox.get("x", 0))
+                y = int(face_bbox.get("y", 0))
+                w = int(face_bbox.get("w", 0))
+                h = int(face_bbox.get("h", 0))
+                cv2.rectangle(frame, (x, y), (x + w, y + h), (60, 220, 80), 2)
+                cv2.putText(frame, "face", (x, max(20, y - 8)), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (60, 220, 80), 2)
+
+                if settings.liveness_enabled:
+                    liveness_result = check_liveness(
+                        frame=frame,
+                        face_bbox=face_bbox,
+                        model_dir=settings.liveness_model_dir,
+                        threshold=settings.liveness_threshold,
+                        live_class_idx=settings.liveness_live_class_idx,
+                    )
+                    regions = liveness_result.get("model_regions") or []
+                    colors = [(255, 170, 0), (0, 200, 255), (180, 120, 255)]
+                    for idx, region in enumerate(regions):
+                        bbox = region.get("bbox") or {}
+                        rx = int(bbox.get("x", 0))
+                        ry = int(bbox.get("y", 0))
+                        rw = int(bbox.get("w", 0))
+                        rh = int(bbox.get("h", 0))
+                        color = colors[idx % len(colors)]
+                        cv2.rectangle(frame, (rx, ry), (rx + rw, ry + rh), color, 2)
+                        label = str(region.get("model", "model"))
+                        cv2.putText(frame, label, (rx, max(20, ry - 8)), cv2.FONT_HERSHEY_SIMPLEX, 0.48, color, 2)
+
+                    score = liveness_result.get("score")
+                    is_live = liveness_result.get("is_live")
+                    backend = liveness_result.get("backend", "unknown")
+                    text = (
+                        f"{backend} | liveness: {score} ({'live' if is_live else 'spoof'})"
+                        if score is not None
+                        else f"{backend} | liveness: n/a"
+                    )
+                    cv2.putText(frame, text, (14, 26), cv2.FONT_HERSHEY_SIMPLEX, 0.56, (245, 245, 245), 2)
+
         _, jpeg = cv2.imencode(
             ".jpg",
             frame,
@@ -736,6 +781,7 @@ def create_app() -> Flask:
     @app.post("/pointage")
     def pointage() -> tuple[object, int]:
       sample = _capture_with_face()
+      liveness_result: dict | None = None
       if not sample.get("ok", False):
         event_type, event_result = _emit_platform_event(
           "recognition_failed",
@@ -792,7 +838,8 @@ def create_app() -> Flask:
             "event_logged": bool(event_result.get("ok")),
             "event_result": event_result,
           }), 503
-        if not liveness_result.get("is_live", True):
+        # Blocage strict: on accepte uniquement le booléen True explicite.
+        if liveness_result.get("is_live") is not True:
           event_type, event_result = _emit_platform_event(
             "spoof_attempt",
             status="blocked",
@@ -847,6 +894,12 @@ def create_app() -> Flask:
           "full_name": api_response.get("full_name"),
           "pointage_type": api_response.get("pointage_type"),
           "pointage_id": api_response.get("pointage_id"),
+          "liveness": {
+            "enabled": bool(settings.liveness_enabled),
+            "is_live": None if liveness_result is None else liveness_result.get("is_live"),
+            "score": None if liveness_result is None else liveness_result.get("score"),
+            "backend": None if liveness_result is None else liveness_result.get("backend"),
+          },
         }), 200
 
       event_type = "unknown_user" if api_result.get("status_code") in {401, 404} else "recognition_failed"
