@@ -111,7 +111,7 @@ _UI_HTML = """\
 
     .std-header {
       display: flex;
-      justify-content: space-between;
+      justify-content: flex-start;
       align-items: center;
       gap: 12px;
     }
@@ -121,17 +121,6 @@ _UI_HTML = """\
       text-transform: uppercase;
       font-weight: 700;
       font-size: clamp(1.06rem, 2.1vw, 1.56rem);
-    }
-
-    .badge {
-      border: 1px solid var(--line);
-      border-radius: 999px;
-      padding: 8px 14px;
-      font-size: 0.78rem;
-      text-transform: uppercase;
-      letter-spacing: 0.14em;
-      background: rgba(255, 255, 255, 0.06);
-      backdrop-filter: blur(7px);
     }
 
     .std-main {
@@ -151,12 +140,14 @@ _UI_HTML = """\
     }
 
     .clock-time {
-      font-size: clamp(2.4rem, 11vw, 8rem);
+      font-size: clamp(1.24rem, 3.6vw, 2.5rem);
       font-variant-numeric: tabular-nums;
       font-weight: 800;
-      line-height: 0.94;
-      letter-spacing: 0.02em;
+      line-height: 1.2;
+      letter-spacing: 0.04em;
       text-shadow: 0 10px 34px rgba(0, 0, 0, 0.45);
+      text-transform: uppercase;
+      color: #f3f9fd;
     }
 
     .clock-date {
@@ -167,9 +158,9 @@ _UI_HTML = """\
     }
 
     .std-cards {
-      width: min(860px, 100%);
+      width: min(520px, 100%);
       display: grid;
-      grid-template-columns: repeat(2, minmax(0, 1fr));
+      grid-template-columns: 1fr;
       gap: clamp(10px, 1.8vw, 18px);
     }
 
@@ -419,14 +410,11 @@ _UI_HTML = """\
     <section class="view view-standard active" id="viewStandard">
       <header class="std-header">
         <h1 class="std-brand">BioAttend</h1>
-        <div class="badge">Mode standard</div>
       </header>
 
       <main class="std-main">
-        <div class="clock-time" id="clockTime">--:--:--</div>
-        <div class="clock-date" id="clockDate">--</div>
+        <div class="clock-time" id="clockTime">--:--:-- | --- | --/--/----</div>
         <div class="std-cards">
-          <article class="card"><div class="card-title">Jour</div><div class="card-value" id="dayLabel">--</div></article>
           <article class="card"><div class="card-title">Meteo</div><div class="card-value" id="weatherLabel">Mise a jour...</div></article>
         </div>
       </main>
@@ -469,8 +457,6 @@ _UI_HTML = """\
     var viewCapture = document.getElementById('viewCapture');
     var viewResult = document.getElementById('viewResult');
     var clockTime = document.getElementById('clockTime');
-    var clockDate = document.getElementById('clockDate');
-    var dayLabel = document.getElementById('dayLabel');
     var weatherLabel = document.getElementById('weatherLabel');
     var stdFooter = document.getElementById('stdFooter');
     var captureStatusMain = document.getElementById('captureStatusMain');
@@ -481,8 +467,8 @@ _UI_HTML = """\
     var resultKind = document.getElementById('resultKind');
     var resultMeta = document.getElementById('resultMeta');
 
-    var KIOSK_MODE = __KIOSK_MODE__;
-    var CAMERA_MIRROR = __CAMERA_MIRROR__;
+    var KIOSK_MODE = "__KIOSK_MODE__" === 'true';
+    var CAMERA_MIRROR = "__CAMERA_MIRROR__" === 'true';
     var SHOW_BOXES = new URLSearchParams(window.location.search).get('boxes') === '1';
 
     var streamRunning = false;
@@ -527,11 +513,10 @@ _UI_HTML = """\
 
     function updateClock() {
       var now = new Date();
-      clockTime.textContent = now.toLocaleTimeString('fr-FR');
-      clockDate.textContent = now.toLocaleDateString('fr-FR', {
-        weekday: 'short', day: '2-digit', month: 'long', year: 'numeric'
-      });
-      dayLabel.textContent = now.toLocaleDateString('fr-FR', { weekday: 'long' });
+      var time = now.toLocaleTimeString('fr-FR');
+      var weekday = now.toLocaleDateString('fr-FR', { weekday: 'long' });
+      var date = now.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric' });
+      clockTime.textContent = time + ' | ' + weekday + ' | ' + date;
     }
 
     async function enterFullscreen() {
@@ -541,27 +526,43 @@ _UI_HTML = """\
       }
     }
 
+    async function fetchWeatherFor(lat, lon) {
+      var url = 'https://api.open-meteo.com/v1/forecast?latitude=' + lat + '&longitude=' + lon + '&current=temperature_2m&timezone=auto';
+      var resp = await fetch(url);
+      if (!resp.ok) throw new Error('meteo');
+      var data = await resp.json();
+      if (!data.current || typeof data.current.temperature_2m !== 'number') throw new Error('meteo');
+      weatherLabel.textContent = Math.round(data.current.temperature_2m) + '°C';
+    }
+
     function updateWeather() {
       if (!('geolocation' in navigator)) {
-        weatherLabel.textContent = 'GPS indisponible';
+        fetchWeatherFor(3.8480, 11.5021).catch(function() {
+          weatherLabel.textContent = 'Meteo indisponible';
+        });
         return;
       }
-      navigator.geolocation.getCurrentPosition(async function(pos) {
-        var lat = pos.coords.latitude;
-        var lon = pos.coords.longitude;
+      try {
+        navigator.geolocation.getCurrentPosition(async function(pos) {
+          var lat = pos.coords.latitude;
+          var lon = pos.coords.longitude;
+          try {
+            await fetchWeatherFor(lat, lon);
+          } catch (e) {
+            weatherLabel.textContent = 'Meteo indisponible';
+          }
+        }, function() {
+          fetchWeatherFor(3.8480, 11.5021).catch(function() {
+            weatherLabel.textContent = 'Meteo indisponible';
+          });
+        }, { timeout: 7000, maximumAge: 600000 });
+      } catch (e) {
         try {
-          var url = 'https://api.open-meteo.com/v1/forecast?latitude=' + lat + '&longitude=' + lon + '&current=temperature_2m&timezone=auto';
-          var resp = await fetch(url);
-          if (!resp.ok) throw new Error('meteo');
-          var data = await resp.json();
-          if (!data.current || typeof data.current.temperature_2m !== 'number') throw new Error('meteo');
-          weatherLabel.textContent = Math.round(data.current.temperature_2m) + '°C';
+          fetchWeatherFor(3.8480, 11.5021);
         } catch (e) {
           weatherLabel.textContent = 'Meteo indisponible';
         }
-      }, function() {
-        weatherLabel.textContent = 'Localisation refusee';
-      }, { timeout: 7000, maximumAge: 600000 });
+      }
     }
 
     function showResultSuccess(data) {
@@ -631,13 +632,19 @@ _UI_HTML = """\
       if (!recognitionInProgress) startCaptureFlow();
     });
 
-    document.addEventListener('keydown', function(e) {
+    function tryStartFromKey(e) {
       if ((e.code === 'Space' || e.code === 'Enter') && !recognitionInProgress) {
         e.preventDefault();
         startCaptureFlow();
       }
-      if (e.key === 'f' || e.key === 'F') enterFullscreen();
-    });
+      if (e.key === 'f' || e.key === 'F') {
+        enterFullscreen();
+      }
+    }
+
+    document.addEventListener('keydown', tryStartFromKey);
+    window.addEventListener('keydown', tryStartFromKey);
+    document.body.addEventListener('click', function() { window.focus(); });
 
     if (KIOSK_MODE) {
       stdFooter.innerHTML = 'Mode kiosk actif | Lancez la capture avec <span class="key">Espace</span>';
