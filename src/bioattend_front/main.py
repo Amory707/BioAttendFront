@@ -399,7 +399,7 @@ _UI_HTML = """\
             no_face_detected: 'Visage non detecte',
             recognition_failed: 'Echec de reconnaissance',
             unknown_user: 'Utilisateur inconnu',
-            spoof_attempt: 'Tentative d\'usurpation detectee'
+            spoof_attempt: 'Anti-spoof'
           };
           var loggedText = data.event_logged === true ? 'journalise plateforme: oui' : 'journalise plateforme: non';
           setStatus('error', titleByType[errorType] || 'Non reconnu', (data.error || 'Veuillez reessayer') + ' | ' + loggedText);
