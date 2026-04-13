@@ -691,6 +691,7 @@ _UI_HTML = """\
       }, 700);
     }
 
+    
     function triggerCaptureFromUserInput(e) {
       if (e && typeof e.preventDefault === "function") e.preventDefault();
       if (!recognitionInProgress) startCaptureFlow();
