@@ -1120,6 +1120,7 @@ def create_app() -> Flask:
         frame = capture_result["frame"]
 
         show_boxes = request.args.get("boxes", "0") == "1"
+        show_liveness_overlay = request.args.get("liveness", "0") == "1"
         if show_boxes:
             face_result = detect_and_crop_face(frame)
             if face_result.get("ok", False):
@@ -1131,7 +1132,9 @@ def create_app() -> Flask:
                 cv2.rectangle(frame, (x, y), (x + w, y + h), (60, 220, 80), 2)
                 cv2.putText(frame, "face", (x, max(20, y - 8)), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (60, 220, 80), 2)
 
-                if settings.liveness_enabled:
+                # En mode flux camera, la liveness reste désactivée par défaut.
+                # Elle ne s'affiche qu'en diagnostic explicite (?boxes=1&liveness=1).
+                if settings.liveness_enabled and show_liveness_overlay:
                     liveness_result = check_liveness(
                         frame=frame,
                         face_bbox=face_bbox,
