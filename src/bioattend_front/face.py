@@ -9,11 +9,18 @@ import numpy as np
 
 _CASCADE_PATH = cv2.data.haarcascades + "haarcascade_frontalface_default.xml"
 _FACE_CASCADE = cv2.CascadeClassifier(_CASCADE_PATH)
+_EYE_CASCADE_PATH = cv2.data.haarcascades + "haarcascade_eye_tree_eyeglasses.xml"
+_EYE_CASCADE = cv2.CascadeClassifier(_EYE_CASCADE_PATH)
 
 # Taille minimale (en px) qu'un côté du visage doit atteindre pour être
 # considéré comme valide. En dessous, on retourne "aucun visage".
-_MIN_FACE_SIZE_PX = 64
+_MIN_FACE_SIZE_PX = 80
 _CENTER_TOLERANCE_RATIO = 0.35
+_MIN_FACE_ASPECT_RATIO = 0.72
+_MAX_FACE_ASPECT_RATIO = 1.45
+_MIN_FACE_AREA_RATIO = 0.015
+_MAX_FACE_AREA_RATIO = 0.65
+_REQUIRE_EYE_CHECK = True
 
 
 def _to_bbox(face: tuple[int, int, int, int]) -> dict[str, int]:
@@ -25,7 +32,49 @@ def _largest_face(faces: list[tuple[int, int, int, int]]) -> tuple[int, int, int
     return max(faces, key=lambda f: int(f[2]) * int(f[3]))
 
 
+def _looks_like_face(
+    gray: np.ndarray,
+    face: tuple[int, int, int, int],
+    frame_w: int,
+    frame_h: int,
+) -> tuple[bool, str]:
+    x, y, w, h = [int(v) for v in face]
+    if w < _MIN_FACE_SIZE_PX or h < _MIN_FACE_SIZE_PX:
+        return False, "too_small"
+
+    aspect_ratio = float(w) / float(max(1, h))
+    if not (_MIN_FACE_ASPECT_RATIO <= aspect_ratio <= _MAX_FACE_ASPECT_RATIO):
+        return False, "bad_aspect_ratio"
+
+    area_ratio = float(w * h) / float(max(1, frame_w * frame_h))
+    if not (_MIN_FACE_AREA_RATIO <= area_ratio <= _MAX_FACE_AREA_RATIO):
+        return False, "bad_area_ratio"
+
+    # Vérifie la présence d'au moins un oeil dans la moitié haute du visage.
+    # Ce garde-fou réduit fortement les faux positifs (mains, objets, textures).
+    if _REQUIRE_EYE_CHECK and not _EYE_CASCADE.empty():
+        top_h = max(1, int(h * 0.65))
+        x1 = max(0, x)
+        y1 = max(0, y)
+        x2 = min(frame_w, x + w)
+        y2 = min(frame_h, y + top_h)
+        if x2 > x1 and y2 > y1:
+            roi = gray[y1:y2, x1:x2]
+            min_eye = max(12, int(min(w, h) * 0.12))
+            eyes = _EYE_CASCADE.detectMultiScale(
+                roi,
+                scaleFactor=1.08,
+                minNeighbors=6,
+                minSize=(min_eye, min_eye),
+            )
+            if len(eyes) == 0:
+                return False, "no_eyes"
+
+    return True, "ok"
+
+
 def _select_primary_face(
+    gray: np.ndarray,
     faces: list[tuple[int, int, int, int]],
     frame_w: int,
     frame_h: int,
@@ -35,23 +84,32 @@ def _select_primary_face(
     tol_x = frame_w * _CENTER_TOLERANCE_RATIO
     tol_y = frame_h * _CENTER_TOLERANCE_RATIO
 
-    valid_size = [f for f in faces if int(f[2]) >= _MIN_FACE_SIZE_PX and int(f[3]) >= _MIN_FACE_SIZE_PX]
+    valid_shape: list[tuple[int, int, int, int]] = []
+    reject_reasons: dict[str, int] = {}
+    for f in faces:
+        ok, reason = _looks_like_face(gray, f, frame_w, frame_h)
+        if ok:
+            valid_shape.append(f)
+        else:
+            reject_reasons[reason] = int(reject_reasons.get(reason, 0)) + 1
 
     guard: dict[str, Any] = {
         "min_face_size_px": _MIN_FACE_SIZE_PX,
         "center_tolerance_ratio": _CENTER_TOLERANCE_RATIO,
         "all_candidates": len(faces),
-        "size_candidates": len(valid_size),
+        "shape_candidates": len(valid_shape),
+        "rejected_reasons": reject_reasons,
+        "eye_check_enabled": _REQUIRE_EYE_CHECK and not _EYE_CASCADE.empty(),
     }
 
     # Si aucun visage ne dépasse le seuil minimal, on refuse proprement.
-    if not valid_size:
+    if not valid_shape:
         guard["centered_candidates"] = 0
-        guard["rejected_too_small"] = True
+        guard["rejected_all_candidates"] = True
         return None, guard
 
     centered = []
-    for f in valid_size:
+    for f in valid_shape:
         x, y, w, h = f
         fx = x + w / 2.0
         fy = y + h / 2.0
@@ -59,9 +117,9 @@ def _select_primary_face(
             centered.append(f)
 
     guard["centered_candidates"] = len(centered)
-    guard["rejected_too_small"] = False
+    guard["rejected_all_candidates"] = False
 
-    candidates = centered if centered else valid_size
+    candidates = centered if centered else valid_shape
     primary = _largest_face(candidates)
     return primary, guard
 
@@ -98,10 +156,9 @@ def detect_and_crop_face(frame: Any) -> dict[str, Any]:
     clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
     gray_clahe = clahe.apply(gray)
     passes = [
-        {"gray": gray, "scale_factor": 1.10, "min_neighbors": 5, "min_size": (80, 80)},
-        {"gray": gray_eq, "scale_factor": 1.08, "min_neighbors": 4, "min_size": (64, 64)},
-        {"gray": gray_eq, "scale_factor": 1.05, "min_neighbors": 3, "min_size": (48, 48)},
-        {"gray": gray_clahe, "scale_factor": 1.03, "min_neighbors": 2, "min_size": (36, 36)},
+        {"gray": gray, "scale_factor": 1.10, "min_neighbors": 6, "min_size": (96, 96)},
+        {"gray": gray_eq, "scale_factor": 1.08, "min_neighbors": 5, "min_size": (80, 80)},
+        {"gray": gray_clahe, "scale_factor": 1.06, "min_neighbors": 4, "min_size": (64, 64)},
     ]
 
     faces: list[tuple[int, int, int, int]] = []
@@ -132,7 +189,7 @@ def detect_and_crop_face(frame: Any) -> dict[str, Any]:
         }
 
     height, width = frame.shape[:2]
-    primary, guard = _select_primary_face(faces, width, height)
+    primary, guard = _select_primary_face(gray, faces, width, height)
 
     if primary is None:
         return {
