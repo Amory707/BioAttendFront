@@ -660,7 +660,7 @@ _UI_HTML = """\
         recognitionInProgress = false;
         setMode("standard");
         setCaptureStatus("Preparation de la reconnaissance...", "Ne bougez pas pendant la lecture", "");
-        stdFooter.innerHTML = "Appuyez sur <span class=\"key\">Espace</span> pour lancer la capture";
+        stdFooter.innerHTML = "Appuyez sur Espace pour lancer la capture";
       }, 4200);
     }
 
