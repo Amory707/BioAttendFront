@@ -639,7 +639,7 @@ _UI_HTML = """\
       resultTag.textContent = "Pointage valide";
       resultGreeting.textContent = "Bonjour " + data.full_name;
       resultKind.textContent = type;
-      resultMeta.textContent = "Heure: " + _fmtTime(now) + " | Date: " + _fmtDate(now);
+      resultMeta.textContent = "Heure: " + _fmtTime(now) + " | Date: " + _fmtDateEuroLong(now);
     }
 
     function showResultError(data) {
