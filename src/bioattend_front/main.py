@@ -58,6 +58,15 @@ _UI_HTML = """\
       overflow: hidden;
     }
 
+    .app::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      z-index: 0;
+      pointer-events: none;
+      background: radial-gradient(120% 90% at 50% 30%, rgba(6, 14, 24, 0.18), rgba(1, 6, 10, 0.78));
+    }
+
     .logo-bg {
       position: absolute;
       inset: 0;
@@ -65,13 +74,18 @@ _UI_HTML = """\
       align-items: center;
       justify-content: center;
       pointer-events: none;
-      opacity: 0.12;
+      opacity: 0.28;
+      overflow: hidden;
       z-index: 0;
     }
 
     .logo-bg img {
-      width: min(74vw, 900px);
-      filter: grayscale(0.2) contrast(1.05);
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      object-position: center;
+      transform: scale(1.04);
+      filter: saturate(0.92) brightness(0.72) contrast(1.03);
     }
 
     .view {
@@ -126,11 +140,20 @@ _UI_HTML = """\
       align-content: center;
       text-align: center;
       gap: clamp(10px, 2.2vw, 22px);
+      width: min(1180px, 100%);
+      margin: 0 auto;
+      border-radius: 26px;
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      background: linear-gradient(150deg, rgba(6, 14, 24, 0.52), rgba(4, 10, 17, 0.38));
+      backdrop-filter: blur(6px);
+      box-shadow: 0 20px 80px rgba(0, 0, 0, 0.35);
+      padding: clamp(16px, 2.5vw, 28px);
     }
 
     .clock-time {
       font-size: clamp(2.4rem, 11vw, 8rem);
       font-variant-numeric: tabular-nums;
+      font-weight: 800;
       line-height: 0.94;
       letter-spacing: 0.02em;
       text-shadow: 0 10px 34px rgba(0, 0, 0, 0.45);
@@ -144,23 +167,24 @@ _UI_HTML = """\
     }
 
     .std-cards {
-      width: min(1100px, 100%);
+      width: min(860px, 100%);
       display: grid;
-      grid-template-columns: repeat(3, minmax(0, 1fr));
+      grid-template-columns: repeat(2, minmax(0, 1fr));
       gap: clamp(10px, 1.8vw, 18px);
     }
 
     .card {
-      border-radius: 18px;
-      border: 1px solid var(--line);
-      background: var(--panel);
-      backdrop-filter: blur(8px);
-      padding: 14px;
+      border-radius: 20px;
+      border: 1px solid rgba(255, 255, 255, 0.22);
+      background: linear-gradient(145deg, rgba(8, 16, 25, 0.76), rgba(6, 13, 21, 0.64));
+      backdrop-filter: blur(10px);
+      padding: 16px;
       min-height: 126px;
       display: grid;
       align-content: center;
       justify-items: center;
       gap: 8px;
+      box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.04);
     }
 
     .card-title {
@@ -171,7 +195,7 @@ _UI_HTML = """\
     }
 
     .card-value {
-      font-size: clamp(0.95rem, 1.55vw, 1.16rem);
+      font-size: clamp(1.02rem, 1.7vw, 1.24rem);
       text-align: center;
       color: #edf6fa;
     }
@@ -404,7 +428,6 @@ _UI_HTML = """\
         <div class="std-cards">
           <article class="card"><div class="card-title">Jour</div><div class="card-value" id="dayLabel">--</div></article>
           <article class="card"><div class="card-title">Meteo</div><div class="card-value" id="weatherLabel">Mise a jour...</div></article>
-          <article class="card"><div class="card-title">Citation</div><div class="card-value" id="quoteLabel">Le succes, c'est la somme de petits efforts repetes chaque jour.</div></article>
         </div>
       </main>
 
@@ -448,7 +471,6 @@ _UI_HTML = """\
     var clockTime = document.getElementById('clockTime');
     var clockDate = document.getElementById('clockDate');
     var dayLabel = document.getElementById('dayLabel');
-    var quoteLabel = document.getElementById('quoteLabel');
     var weatherLabel = document.getElementById('weatherLabel');
     var stdFooter = document.getElementById('stdFooter');
     var captureStatusMain = document.getElementById('captureStatusMain');
@@ -467,14 +489,6 @@ _UI_HTML = """\
     var streamTimer = null;
     var recognitionInProgress = false;
     var resultTimer = null;
-    var quoteIndex = 0;
-
-    var quotes = [
-      'Le succes, c\'est la somme de petits efforts repetes chaque jour.',
-      'Chaque jour est une nouvelle chance de faire mieux.',
-      'La discipline est le pont entre objectif et accomplissement.',
-      'Commencez par etre present, le reste suivra.'
-    ];
 
     function setMode(mode) {
       viewStandard.classList.toggle('active', mode === 'standard');
@@ -525,11 +539,6 @@ _UI_HTML = """\
       if (!document.fullscreenElement && el.requestFullscreen) {
         try { await el.requestFullscreen(); } catch (e) { return; }
       }
-    }
-
-    function rotateQuote() {
-      quoteIndex = (quoteIndex + 1) % quotes.length;
-      quoteLabel.textContent = quotes[quoteIndex];
     }
 
     function updateWeather() {
@@ -646,7 +655,6 @@ _UI_HTML = """\
 
     updateClock();
     setInterval(updateClock, 1000);
-    setInterval(rotateQuote, 18000);
     updateWeather();
     setInterval(updateWeather, 300000);
   </script>
