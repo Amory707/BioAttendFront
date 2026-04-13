@@ -62,7 +62,7 @@ _UI_HTML = """\
       height: 100%;
       object-fit: cover;
       object-position: center;
-      opacity: 0.52;
+      opacity: 0.30;
       filter: saturate(1.05) brightness(0.6);
     }
 
@@ -125,15 +125,14 @@ _UI_HTML = """\
 
     /* Horloge héro */
     .clock-time {
-      font-size: clamp(2.6rem, 9vw, 7rem);
-      font-weight: 800;
-      letter-spacing: 0.05em;
-      text-transform: uppercase;
-      line-height: 1.05;
+      font-size: clamp(1.9rem, 6vw, 4.6rem);
+      font-weight: 700;
+      letter-spacing: 0.02em;
+      line-height: 1.12;
       color: #ffffff;
       text-shadow:
-        0 0 80px rgba(66, 200, 222, 0.5),
-        0 4px 48px rgba(0, 0, 0, 0.95);
+        0 0 44px rgba(66, 200, 222, 0.35),
+        0 3px 24px rgba(0, 0, 0, 0.9);
     }
 
     /* Météo : pilule légère */
@@ -478,6 +477,7 @@ _UI_HTML = """\
     var streamTimer = null;
     var recognitionInProgress = false;
     var resultTimer = null;
+    var CAPTURE_PREP_DELAY_MS = 1800;
 
     function setMode(mode) {
       viewStandard.classList.toggle("active", mode === "standard");
@@ -515,6 +515,7 @@ _UI_HTML = """\
     feed.addEventListener("error", function() { scheduleNextFrame(180); });
 
     var _DAYS = ["Dimanche", "Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi"];
+    var _MONTHS = ["janvier", "fevrier", "mars", "avril", "mai", "juin", "juillet", "aout", "septembre", "octobre", "novembre", "decembre"];
 
     function _pad(n) { return String(n).padStart(2, "0"); }
 
@@ -522,15 +523,15 @@ _UI_HTML = """\
       return _pad(d.getHours()) + ":" + _pad(d.getMinutes()) + ":" + _pad(d.getSeconds());
     }
 
-    function _fmtDate(d) {
-      return _pad(d.getDate()) + "/" + _pad(d.getMonth() + 1) + "/" + d.getFullYear();
+    function _fmtDateEuroLong(d) {
+      return _DAYS[d.getDay()] + " " + _pad(d.getDate()) + " " + _MONTHS[d.getMonth()] + " " + d.getFullYear();
     }
 
     function updateClock() {
       try {
         var now = new Date();
         if (clockTime) {
-          clockTime.textContent = _fmtTime(now) + "  |  " + _DAYS[now.getDay()] + "  |  " + _fmtDate(now);
+          clockTime.textContent = _fmtDateEuroLong(now) + " | " + _fmtTime(now);
         }
       } catch(e) {}
     }
@@ -568,28 +569,30 @@ _UI_HTML = """\
       }
     }
 
-    function _jsonPost(url, body, onSuccess, onError) {
+    function _jsonPost(url, body, onSuccess, onHttpError, onNetworkError) {
       try {
         var xhr = new XMLHttpRequest();
         xhr.open("POST", url, true);
         xhr.setRequestHeader("Content-Type", "application/json");
         xhr.onreadystatechange = function() {
           if (xhr.readyState !== 4) return;
+          var payload = {};
+          try {
+            payload = JSON.parse(xhr.responseText || "{}");
+          } catch (err) {
+            payload = {};
+          }
+
           if (xhr.status >= 200 && xhr.status < 300) {
-            try {
-              var payload = JSON.parse(xhr.responseText || "{}");
-              onSuccess(payload);
-            } catch (err) {
-              onError(err);
-            }
+            onSuccess(payload, xhr.status);
             return;
           }
-          onError(new Error("http_" + xhr.status));
+          onHttpError(payload, xhr.status);
         };
-        xhr.onerror = function() { onError(new Error("network")); };
+        xhr.onerror = function() { onNetworkError(new Error("network")); };
         xhr.send(body ? JSON.stringify(body) : "{}");
       } catch (err) {
-        onError(err);
+        onNetworkError(err);
       }
     }
 
@@ -683,12 +686,16 @@ _UI_HTML = """\
             showResultError(data);
           }
           backToStandardSoon();
+        }, function(data) {
+          setMode("result");
+          showResultError(data && typeof data === "object" ? data : { error: "Pointage refuse", error_type: "recognition_failed" });
+          backToStandardSoon();
         }, function() {
           setMode("result");
           showResultError({ error: "Connexion API indisponible", error_type: "recognition_failed" });
           backToStandardSoon();
         });
-      }, 700);
+      }, CAPTURE_PREP_DELAY_MS);
     }
 
     
@@ -785,6 +792,23 @@ def create_app() -> Flask:
         )
         return normalized_type, event_result
 
+    def _scan_oval_geometry(frame_w: int, frame_h: int) -> tuple[float, float, float, float]:
+        # Aligne la zone d'acceptation backend sur l'ovale affiché dans l'UI.
+        oval_w = max(240.0, min(float(frame_w) * 0.33, 420.0))
+        oval_h = oval_w / 0.76
+        cx = float(frame_w) * 0.5
+        cy = (float(frame_h) * 0.5) - (oval_h * 0.04)
+        rx = oval_w * 0.5
+        ry = oval_h * 0.5
+        return cx, cy, rx, ry
+
+    def _point_in_oval(px: float, py: float, cx: float, cy: float, rx: float, ry: float) -> bool:
+        if rx <= 0 or ry <= 0:
+            return False
+        dx = (px - cx) / rx
+        dy = (py - cy) / ry
+        return (dx * dx + dy * dy) <= 1.0
+
     def _is_reliable_face_result(face_result: dict, frame_w: int, frame_h: int) -> bool:
         primary = face_result.get("primary_face") or {}
         guard = face_result.get("guard") or {}
@@ -804,6 +828,22 @@ def create_app() -> Flask:
         margin_y = max(2, int(frame_h * 0.02))
         if x <= margin_x or y <= margin_y or (x + w) >= (frame_w - margin_x) or (y + h) >= (frame_h - margin_y):
             return False
+
+        cx, cy, rx, ry = _scan_oval_geometry(frame_w, frame_h)
+        face_cx = x + (w * 0.5)
+        face_cy = y + (h * 0.5)
+
+        # Le centre du visage doit être dans l'ovale de scan.
+        if not _point_in_oval(face_cx, face_cy, cx, cy, rx, ry):
+            return False
+
+        # Le rectangle visage doit rester dans la boîte englobante de l'ovale.
+        oval_left = cx - rx
+        oval_right = cx + rx
+        oval_top = cy - ry
+        oval_bottom = cy + ry
+        if x < oval_left or y < oval_top or (x + w) > oval_right or (y + h) > oval_bottom:
+          return False
 
         return True
 

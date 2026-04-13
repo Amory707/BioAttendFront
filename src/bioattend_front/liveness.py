@@ -80,6 +80,17 @@ def _to_logit_threshold(probability_threshold: float) -> float:
     return float(np.log(p / (1.0 - p)))
 
 
+def _resolve_live_class_idx(requested_idx: int, class_count: int) -> tuple[int, str | None]:
+    if class_count <= 0:
+        return 0, "Invalid class_count"
+    if requested_idx < 0:
+        return 0, f"LIVENESS_LIVE_CLASS_IDX={requested_idx} < 0, fallback to 0"
+    if requested_idx >= class_count:
+        fallback = class_count - 1
+        return fallback, f"LIVENESS_LIVE_CLASS_IDX={requested_idx} out of range for {class_count} classes, fallback to {fallback}"
+    return requested_idx, None
+
+
 def _crop_square_with_reflect(frame: np.ndarray, bbox: dict, expansion_factor: float) -> tuple[np.ndarray, dict[str, int]]:
     """Extract a square crop around the face bbox; pad edges using reflection."""
     h_img, w_img = frame.shape[:2]
@@ -205,14 +216,19 @@ def check_liveness(
             if len(raw) < 2:
                 raise ValueError("Unexpected Facenox output shape")
 
-            real_logit = float(raw[0])
-            spoof_logit = float(raw[1])
+            resolved_live_idx, idx_warning = _resolve_live_class_idx(live_class_idx, len(raw))
+            if idx_warning:
+                warnings.append(idx_warning)
+
+            real_logit = float(raw[resolved_live_idx])
+            other_logits = [float(raw[i]) for i in range(len(raw)) if i != resolved_live_idx]
+            spoof_logit = max(other_logits) if other_logits else float(raw[resolved_live_idx])
             logit_diff = float(real_logit - spoof_logit)
             threshold_logit = _to_logit_threshold(threshold)
             is_live = logit_diff >= threshold_logit
 
-            probs = _softmax(np.array([real_logit, spoof_logit], dtype=np.float32))
-            real_prob = float(probs[0])
+            probs_all = _softmax(np.array(raw, dtype=np.float32))
+            real_prob = float(probs_all[resolved_live_idx])
             duration_ms = round((time.monotonic() - started_at) * 1000, 2)
 
             result: dict[str, Any] = {
@@ -222,9 +238,10 @@ def check_liveness(
                 "threshold": threshold,
                 "threshold_logit": round(threshold_logit, 4),
                 "logit_diff": round(logit_diff, 4),
+                "live_class_idx": int(resolved_live_idx),
                 "models_used": 1,
                 "backend": "facenox_best",
-                "raw_outputs": [[round(real_logit, 4), round(spoof_logit, 4)]],
+                "raw_outputs": [[round(float(x), 4) for x in raw]],
                 "model_regions": [
                     {
                         "model": _FACENOX_MODEL_FILENAME,
@@ -297,7 +314,9 @@ def check_liveness(
             raw = session.run(None, {input_name: tensor})[0][0]
             probs = _softmax(raw).tolist()
             raw_outputs.append([round(float(p), 4) for p in probs])
-            idx = live_class_idx if live_class_idx < len(probs) else 0
+            idx, idx_warning = _resolve_live_class_idx(live_class_idx, len(probs))
+            if idx_warning:
+                warnings.append(f"{cfg['filename']}: {idx_warning}")
             scores.append(float(probs[idx]))
         except Exception as exc:
             warnings.append(f"{cfg['filename']}: {exc}")
