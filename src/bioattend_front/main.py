@@ -458,7 +458,21 @@ _UI_HTML = """\
 
     var KIOSK_MODE = "__KIOSK_MODE__" === "true";
     var CAMERA_MIRROR = "__CAMERA_MIRROR__" === "true";
-    var SHOW_BOXES = new URLSearchParams(window.location.search).get("boxes") === "1";
+
+    function getQueryParam(name) {
+      var search = window.location.search || "";
+      if (!search || search.length < 2) return null;
+      var items = search.substring(1).split("&");
+      for (var i = 0; i < items.length; i++) {
+        var pair = items[i].split("=");
+        if (decodeURIComponent(pair[0] || "") === name) {
+          return decodeURIComponent(pair[1] || "");
+        }
+      }
+      return null;
+    }
+
+    var SHOW_BOXES = getQueryParam("boxes") === "1";
 
     var streamRunning = false;
     var streamTimer = null;
@@ -521,44 +535,56 @@ _UI_HTML = """\
       } catch(e) {}
     }
 
-    async function enterFullscreen() {
+    function enterFullscreen() {
       var el = document.documentElement;
       if (!document.fullscreenElement && el.requestFullscreen) {
-        try { await el.requestFullscreen(); } catch (e) {}
+        try {
+          var maybePromise = el.requestFullscreen();
+          if (maybePromise && typeof maybePromise.catch === "function") {
+            maybePromise.catch(function() {});
+          }
+        } catch (e) {}
       }
     }
 
-    async function fetchWeatherFor(lat, lon) {
+    function fetchWeatherFor(lat, lon) {
       var url = "https://api.open-meteo.com/v1/forecast?latitude=" + lat + "&longitude=" + lon + "&current=temperature_2m&timezone=auto";
-      var resp = await fetch(url);
-      if (!resp.ok) throw new Error("meteo");
-      var data = await resp.json();
-      if (!data.current || typeof data.current.temperature_2m !== "number") throw new Error("meteo");
-      weatherLabel.textContent = Math.round(data.current.temperature_2m) + "\u00b0C";
+      if (typeof fetch !== "function") {
+        return Promise.reject(new Error("fetch_unavailable"));
+      }
+      return fetch(url).then(function(resp) {
+        if (!resp.ok) throw new Error("meteo");
+        return resp.json();
+      }).then(function(data) {
+        if (!data.current || typeof data.current.temperature_2m !== "number") {
+          throw new Error("meteo");
+        }
+        if (weatherLabel) {
+          weatherLabel.textContent = Math.round(data.current.temperature_2m) + "\u00b0C";
+        }
+      });
     }
 
     function updateWeather() {
       if (!("geolocation" in navigator)) {
         fetchWeatherFor(3.8480, 11.5021).catch(function() {
-          weatherLabel.textContent = "Meteo indisponible";
+          if (weatherLabel) weatherLabel.textContent = "Meteo indisponible";
         });
         return;
       }
       try {
-        navigator.geolocation.getCurrentPosition(async function(pos) {
-          try {
-            await fetchWeatherFor(pos.coords.latitude, pos.coords.longitude);
-          } catch (e) {
-            weatherLabel.textContent = "Meteo indisponible";
-          }
+        navigator.geolocation.getCurrentPosition(function(pos) {
+          fetchWeatherFor(pos.coords.latitude, pos.coords.longitude).catch(function() {
+            if (weatherLabel) weatherLabel.textContent = "Meteo indisponible";
+          });
         }, function() {
           fetchWeatherFor(3.8480, 11.5021).catch(function() {
-            weatherLabel.textContent = "Meteo indisponible";
+            if (weatherLabel) weatherLabel.textContent = "Meteo indisponible";
           });
         }, { timeout: 7000, maximumAge: 600000 });
       } catch (e) {
         fetchWeatherFor(3.8480, 11.5021).catch(function() {
-          weatherLabel.textContent = "Meteo indisponible";
+          if (weatherLabel) weatherLabel.textContent = "Meteo indisponible";
         });
       }
     }
@@ -598,7 +624,7 @@ _UI_HTML = """\
       }, 4200);
     }
 
-    async function startCaptureFlow() {
+    function startCaptureFlow() {
       if (recognitionInProgress) return;
       recognitionInProgress = true;
       clearTimeout(resultTimer);
@@ -606,42 +632,64 @@ _UI_HTML = """\
       setCaptureStatus("Preparation de la reconnaissance...", "Cadrez votre visage dans l\u2019ovale", "");
       startStream();
       enterFullscreen();
-      await new Promise(function(resolve) { setTimeout(resolve, 700); });
-
-      stopStream();
-      setCaptureStatus("Identification en cours...", "Veuillez patienter", "");
-      try {
-        var resp = await fetch("/pointage", { method: "POST" });
-        var data = await resp.json();
-        setMode("result");
-        if (data.ok && data.matched) {
-          showResultSuccess(data);
-        } else {
-          showResultError(data);
+      setTimeout(function() {
+        stopStream();
+        setCaptureStatus("Identification en cours...", "Veuillez patienter", "");
+        if (typeof fetch !== "function") {
+          setMode("result");
+          showResultError({ error: "Navigateur non compatible", error_type: "recognition_failed" });
+          backToStandardSoon();
+          return;
         }
-      } catch (e) {
-        setMode("result");
-        showResultError({ error: "Connexion API indisponible", error_type: "recognition_failed" });
-      }
-      backToStandardSoon();
+        fetch("/pointage", { method: "POST" })
+          .then(function(resp) { return resp.json(); })
+          .then(function(data) {
+            setMode("result");
+            if (data.ok && data.matched) {
+              showResultSuccess(data);
+            } else {
+              showResultError(data);
+            }
+          })
+          .catch(function() {
+            setMode("result");
+            showResultError({ error: "Connexion API indisponible", error_type: "recognition_failed" });
+          })
+          .finally(function() {
+            backToStandardSoon();
+          });
+      }, 700);
     }
 
-    viewStandard.addEventListener("pointerdown", function(e) {
-      e.preventDefault();
+    function triggerCaptureFromUserInput(e) {
+      if (e && typeof e.preventDefault === "function") e.preventDefault();
       if (!recognitionInProgress) startCaptureFlow();
-    });
+    }
 
-    document.addEventListener("keydown", function(e) {
+    if (viewStandard) {
+      if ("onpointerdown" in window) {
+        viewStandard.addEventListener("pointerdown", triggerCaptureFromUserInput);
+      }
+      viewStandard.addEventListener("click", triggerCaptureFromUserInput);
+      viewStandard.addEventListener("touchstart", triggerCaptureFromUserInput, { passive: false });
+    }
+
+    function onKeydown(e) {
       if (e.repeat) return;
-      var isSpace = e.code === "Space" || e.keyCode === 32;
-      var isEnter = e.code === "Enter" || e.keyCode === 13;
+      var key = (e.key || "").toLowerCase();
+      var code = e.code || "";
+      var isSpace = code === "Space" || key === " " || key === "spacebar" || e.keyCode === 32;
+      var isEnter = code === "Enter" || key === "enter" || e.keyCode === 13;
       if (isSpace || isEnter) {
         e.preventDefault();
         if (!recognitionInProgress) startCaptureFlow();
         return;
       }
-      if (e.key === "f" || e.key === "F") enterFullscreen();
-    });
+      if (key === "f") enterFullscreen();
+    }
+
+    document.addEventListener("keydown", onKeydown);
+    window.addEventListener("keydown", onKeydown);
 
     document.body.addEventListener("click", function() { document.body.focus(); });
 
