@@ -725,7 +725,7 @@ _UI_HTML = """\
     document.body.addEventListener("click", function() { document.body.focus(); });
 
     if (KIOSK_MODE) {
-      stdFooter.innerHTML = "Mode kiosk actif \u2014 appuyez sur <span class=\"key\">Espace</span> pour capturer";
+      stdFooter.innerHTML = "Mode kiosk actif \u2014 appuyez sur Espace pour capturer";
       document.addEventListener("pointerdown", function() {
         enterFullscreen();
       }, false);
