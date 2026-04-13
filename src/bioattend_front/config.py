@@ -64,6 +64,7 @@ class Settings:
     api_token: str
     api_timeout_seconds: int
     pointage_trigger_mode: str
+    gpio_pir: int
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -99,6 +100,7 @@ class Settings:
             api_token=os.getenv("API_TOKEN", "").strip(),
             api_timeout_seconds=_to_int(os.getenv("API_TIMEOUT_SECONDS"), default=8),
             pointage_trigger_mode=_normalize_trigger_mode(os.getenv("POINTAGE_TRIGGER_MODE")),
+            gpio_pir=_to_int(os.getenv("GPIO_PIR"), default=17),
         )
 
     def as_public_dict(self) -> dict[str, object]:

@@ -753,6 +753,39 @@ _UI_HTML = """\
 
     if (CAMERA_MIRROR) feed.style.transform = "scaleX(-1)";
 
+    // ── Polling PIR ──────────────────────────────────────────────────────────
+    if (!MANUAL_TRIGGER_ENABLED) {
+      var _pirLastDetected = false;
+      var _pirCooldownUntil = 0;
+      var PIR_POLL_INTERVAL_MS = 400;
+      var PIR_COOLDOWN_MS = 8000;
+
+      function _pirPoll() {
+        if (recognitionInProgress) return;
+        var now = Date.now();
+        if (now < _pirCooldownUntil) return;
+        var xhr = new XMLHttpRequest();
+        xhr.open("GET", "/pir/status", true);
+        xhr.timeout = 350;
+        xhr.onload = function() {
+          if (xhr.status !== 200) return;
+          try {
+            var data = JSON.parse(xhr.responseText);
+            var detected = data.ok && data.detected;
+            if (detected && !_pirLastDetected && !recognitionInProgress && Date.now() >= _pirCooldownUntil) {
+              _pirCooldownUntil = Date.now() + PIR_COOLDOWN_MS;
+              startCaptureFlow();
+            }
+            _pirLastDetected = detected;
+          } catch(e) {}
+        };
+        xhr.send();
+      }
+
+      setInterval(_pirPoll, PIR_POLL_INTERVAL_MS);
+    }
+    // ─────────────────────────────────────────────────────────────────────────
+
     updateTriggerFooterText();
 
     updateClock();
@@ -768,6 +801,20 @@ def create_app() -> Flask:
     app = Flask(__name__)
     app.config["BIOATTEND_SETTINGS"] = settings
     platform_event_types = {"recognition_failed", "unknown_user", "spoof_attempt"}
+
+    # ── Initialisation GPIO PIR ──────────────────────────────────────────────
+    _gpio_module = None
+    _gpio_pir_available = False
+    if settings.pointage_trigger_mode == "pir":
+        try:
+            import RPi.GPIO as _gpio  # type: ignore[import]
+            _gpio.setmode(_gpio.BCM)
+            _gpio.setup(settings.gpio_pir, _gpio.IN)
+            _gpio_module = _gpio
+            _gpio_pir_available = True
+        except Exception:
+            pass
+    # ────────────────────────────────────────────────────────────────────────
 
     def _bbox_iou(a: dict, b: dict) -> float:
         ax1, ay1 = int(a.get("x", 0)), int(a.get("y", 0))
@@ -923,6 +970,18 @@ def create_app() -> Flask:
     @app.get("/health")
     def health() -> tuple[object, int]:
         return jsonify({"ok": True, "service": "bioattend-front"}), 200
+
+    @app.get("/pir/status")
+    def pir_status() -> tuple[object, int]:
+        if settings.pointage_trigger_mode != "pir":
+            return jsonify({"ok": False, "reason": "mode_not_pir"}), 400
+        if not _gpio_pir_available or _gpio_module is None:
+            return jsonify({"ok": False, "reason": "gpio_unavailable"}), 503
+        try:
+            detected = bool(_gpio_module.input(settings.gpio_pir))
+            return jsonify({"ok": True, "detected": detected}), 200
+        except Exception as exc:
+            return jsonify({"ok": False, "reason": str(exc)}), 500
 
     @app.get("/diagnostics/config")
     def diagnostics_config() -> tuple[object, int]:
