@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import time
 import cv2
-from flask import Flask, Response, jsonify, request
+from pathlib import Path
+
+from flask import Flask, Response, jsonify, request, send_file
 
 from .api_client import identify_embedding, report_event
 from .camera import capture_frame, capture_frame_fast, probe_camera
@@ -11,96 +13,198 @@ from .embedding import generate_embedding
 from .face import detect_and_crop_face
 from .liveness import check_liveness
 
+_PROJECT_ROOT = Path(__file__).resolve().parents[2]
+
 _UI_HTML = """\
 <!DOCTYPE html>
 <html lang="fr">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>BioAttend | Station de pointage</title>
+  <title>BioAttend | Pointeuse intelligente</title>
   <style>
     :root {
-      --bg-a: #0d1a23;
-      --bg-b: #071018;
-      --panel: rgba(4, 12, 18, 0.76);
-      --line: rgba(255, 255, 255, 0.18);
-      --text: #ecf4f7;
-      --muted: #a8bdc8;
-      --accent: #18a5b2;
-      --accent-strong: #0f8792;
-      --ok: #3ad17c;
-      --bad: #ff6d6d;
+      --ink: #f4f8fa;
+      --muted: #a9bfcd;
+      --panel: rgba(8, 16, 23, 0.74);
+      --line: rgba(255, 255, 255, 0.2);
+      --ok: #43d68a;
+      --bad: #ff7a7a;
+      --bg-a: #09111a;
+      --bg-b: #02070b;
     }
 
-    * {
-      box-sizing: border-box;
-      margin: 0;
-      padding: 0;
-    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
 
-    html,
-    body {
+    html, body {
       width: 100%;
       height: 100%;
       overflow: hidden;
     }
 
     body {
-      background:
-        radial-gradient(1000px 500px at 82% -10%, rgba(24, 165, 178, 0.18), transparent 60%),
-        radial-gradient(820px 420px at -5% 102%, rgba(58, 209, 124, 0.12), transparent 60%),
-        linear-gradient(155deg, var(--bg-a), var(--bg-b));
-      color: var(--text);
-      font-family: "Segoe UI", "Noto Sans", sans-serif;
+      color: var(--ink);
+      background: radial-gradient(1200px 600px at 10% -20%, rgba(67, 214, 138, 0.14), transparent 65%),
+        radial-gradient(900px 540px at 95% 108%, rgba(255, 184, 90, 0.16), transparent 62%),
+        linear-gradient(150deg, var(--bg-a), var(--bg-b));
+      font-family: "Bahnschrift", "Trebuchet MS", sans-serif;
       user-select: none;
     }
 
-    .screen {
+    .app {
+      position: relative;
       width: 100vw;
       height: 100dvh;
-      padding: clamp(12px, 2.3vw, 28px);
-      display: grid;
-      grid-template-rows: auto 1fr auto;
-      gap: clamp(10px, 1.6vw, 20px);
+      overflow: hidden;
     }
 
-    .topbar {
+    .logo-bg {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      pointer-events: none;
+      opacity: 0.12;
+      z-index: 0;
+    }
+
+    .logo-bg img {
+      width: min(74vw, 900px);
+      filter: grayscale(0.2) contrast(1.05);
+    }
+
+    .view {
+      position: absolute;
+      inset: 0;
+      padding: clamp(12px, 2.4vw, 28px);
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.25s ease;
+      z-index: 1;
+    }
+
+    .view.active {
+      opacity: 1;
+      pointer-events: auto;
+    }
+
+    .view-standard {
+      display: grid;
+      grid-template-rows: auto 1fr auto;
+      gap: clamp(10px, 2vw, 22px);
+    }
+
+    .std-header {
       display: flex;
       justify-content: space-between;
       align-items: center;
-      gap: 14px;
+      gap: 12px;
     }
 
-    .brand {
-      font-size: clamp(1.02rem, 2vw, 1.5rem);
-      font-weight: 700;
+    .std-brand {
       letter-spacing: 0.22em;
       text-transform: uppercase;
-      color: #d4e7ee;
-      opacity: 0.95;
+      font-weight: 700;
+      font-size: clamp(1.06rem, 2.1vw, 1.56rem);
     }
 
-    .clock {
-      font-variant-numeric: tabular-nums;
-      color: var(--muted);
-      font-size: clamp(0.96rem, 1.6vw, 1.15rem);
-      text-align: right;
-    }
-
-    .main {
-      min-height: 0;
-      display: grid;
-      grid-template-columns: minmax(0, 1fr) minmax(250px, 28vw);
-      gap: clamp(10px, 1.8vw, 20px);
-    }
-
-    .camera-card {
-      position: relative;
-      border-radius: 24px;
-      overflow: hidden;
+    .badge {
       border: 1px solid var(--line);
-      background: #05090d;
-      min-height: 0;
+      border-radius: 999px;
+      padding: 8px 14px;
+      font-size: 0.78rem;
+      text-transform: uppercase;
+      letter-spacing: 0.14em;
+      background: rgba(255, 255, 255, 0.06);
+      backdrop-filter: blur(7px);
+    }
+
+    .std-main {
+      display: grid;
+      justify-items: center;
+      align-content: center;
+      text-align: center;
+      gap: clamp(10px, 2.2vw, 22px);
+    }
+
+    .clock-time {
+      font-size: clamp(2.4rem, 11vw, 8rem);
+      font-variant-numeric: tabular-nums;
+      line-height: 0.94;
+      letter-spacing: 0.02em;
+      text-shadow: 0 10px 34px rgba(0, 0, 0, 0.45);
+    }
+
+    .clock-date {
+      color: var(--muted);
+      font-size: clamp(1rem, 2vw, 1.44rem);
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .std-cards {
+      width: min(1100px, 100%);
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: clamp(10px, 1.8vw, 18px);
+    }
+
+    .card {
+      border-radius: 18px;
+      border: 1px solid var(--line);
+      background: var(--panel);
+      backdrop-filter: blur(8px);
+      padding: 14px;
+      min-height: 126px;
+      display: grid;
+      align-content: center;
+      justify-items: center;
+      gap: 8px;
+    }
+
+    .card-title {
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      font-size: 0.76rem;
+      color: #d4e4ee;
+    }
+
+    .card-value {
+      font-size: clamp(0.95rem, 1.55vw, 1.16rem);
+      text-align: center;
+      color: #edf6fa;
+    }
+
+    .std-footer {
+      text-align: center;
+      color: #8fa8b7;
+      font-size: clamp(0.92rem, 1.5vw, 1.04rem);
+    }
+
+    .key {
+      display: inline-block;
+      border: 1px solid rgba(255, 255, 255, 0.38);
+      border-bottom-width: 3px;
+      border-radius: 10px;
+      padding: 4px 10px;
+      margin: 0 2px;
+      color: #f7fbff;
+      font-size: 0.92em;
+    }
+
+    .view-capture {
+      background: linear-gradient(180deg, rgba(2, 7, 11, 0.34), rgba(2, 7, 11, 0.76));
+    }
+
+    .capture-wrap {
+      position: relative;
+      width: 100%;
+      height: 100%;
+      border-radius: 26px;
+      overflow: hidden;
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      background: #010203;
     }
 
     #feed {
@@ -115,222 +219,277 @@ _UI_HTML = """\
       position: absolute;
       left: 50%;
       top: 50%;
-      width: clamp(220px, 28vw, 360px);
+      width: clamp(250px, 34vw, 430px);
       aspect-ratio: 0.76;
-      transform: translate(-50%, -56%);
-      border: 4px solid rgba(255, 255, 255, 0.62);
+      transform: translate(-50%, -54%);
       border-radius: 50%;
+      border: 4px solid rgba(255, 255, 255, 0.72);
+      box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.28) inset;
       pointer-events: none;
-      box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.2) inset;
-      transition: border-color 0.25s ease, box-shadow 0.25s ease;
+      transition: border-color 0.2s ease;
     }
 
-    .scan-oval.success {
-      border-color: var(--ok);
-      box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.13) inset, 0 0 38px rgba(58, 209, 124, 0.35);
+    .scan-oval.success { border-color: var(--ok); }
+    .scan-oval.error { border-color: var(--bad); }
+
+    .scan-line {
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      width: clamp(210px, 28vw, 352px);
+      height: 2px;
+      transform: translate(-50%, -70px);
+      background: linear-gradient(90deg, transparent, rgba(67, 214, 138, 0.9), transparent);
+      filter: drop-shadow(0 0 8px rgba(67, 214, 138, 0.7));
+      animation: scan 2.1s ease-in-out infinite;
+      pointer-events: none;
     }
 
-    .scan-oval.error {
-      border-color: var(--bad);
-      box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.18) inset, 0 0 36px rgba(255, 109, 109, 0.32);
+    @keyframes scan {
+      0% { transform: translate(-50%, -96px); opacity: 0.2; }
+      50% { transform: translate(-50%, 96px); opacity: 0.95; }
+      100% { transform: translate(-50%, -96px); opacity: 0.2; }
     }
 
-    .guide {
+    .capture-overlay {
+      position: absolute;
+      top: 14px;
+      left: 14px;
+      right: 14px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .capture-title {
+      font-size: clamp(1.08rem, 2vw, 1.58rem);
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: #ecf8ff;
+      text-shadow: 0 6px 20px rgba(0, 0, 0, 0.55);
+    }
+
+    .capture-help {
+      border-radius: 999px;
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      background: rgba(4, 12, 19, 0.6);
+      padding: 8px 14px;
+      color: #d8e8f1;
+      font-size: 0.92rem;
+      backdrop-filter: blur(6px);
+    }
+
+    .capture-status {
       position: absolute;
       bottom: 16px;
       left: 50%;
       transform: translateX(-50%);
-      padding: 8px 14px;
-      border-radius: 999px;
-      font-size: 0.9rem;
-      color: #dbe8ee;
-      background: rgba(4, 10, 16, 0.52);
-      border: 1px solid rgba(255, 255, 255, 0.18);
-      backdrop-filter: blur(4px);
-    }
-
-    .side {
-      border-radius: 20px;
-      border: 1px solid var(--line);
-      background: var(--panel);
-      backdrop-filter: blur(8px);
-      padding: clamp(14px, 2vw, 20px);
-      display: grid;
-      grid-template-rows: auto 1fr auto;
-      gap: 14px;
-      min-height: 0;
-    }
-
-    .status {
-      border-radius: 14px;
-      border: 1px solid rgba(255, 255, 255, 0.12);
-      background: rgba(255, 255, 255, 0.04);
-      min-height: 118px;
-      padding: 16px;
-      display: flex;
-      flex-direction: column;
-      justify-content: center;
+      min-width: min(90vw, 560px);
+      border-radius: 12px;
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      background: rgba(3, 9, 14, 0.7);
+      backdrop-filter: blur(6px);
+      padding: 10px 16px;
       text-align: center;
-      transition: background 0.25s ease, border-color 0.25s ease;
+      color: #e2eef4;
     }
 
-    .status.success {
-      background: rgba(58, 209, 124, 0.13);
-      border-color: rgba(58, 209, 124, 0.45);
-    }
-
-    .status.error {
-      background: rgba(255, 109, 109, 0.12);
-      border-color: rgba(255, 109, 109, 0.45);
-    }
-
-    .status-title {
-      font-size: clamp(1.05rem, 1.7vw, 1.4rem);
+    .capture-status-main {
+      font-size: clamp(1rem, 1.8vw, 1.3rem);
       font-weight: 700;
-      line-height: 1.2;
-      color: #eef6fa;
     }
 
-    .status-info {
-      margin-top: 6px;
+    .capture-status-sub {
+      margin-top: 4px;
+      font-size: clamp(0.88rem, 1.2vw, 1rem);
       color: var(--muted);
-      font-size: clamp(0.9rem, 1.35vw, 1.02rem);
     }
 
-    .actions {
+    .view-result {
       display: grid;
-      grid-template-columns: 1fr;
+      align-items: center;
+      justify-items: center;
+    }
+
+    .result-bg-word {
+      position: absolute;
+      inset: auto 0 11%;
+      text-align: center;
+      font-size: clamp(3rem, 17vw, 16rem);
+      font-weight: 800;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: rgba(255, 255, 255, 0.08);
+      pointer-events: none;
+    }
+
+    .result-card {
+      width: min(96vw, 960px);
+      border-radius: 22px;
+      border: 1px solid rgba(255, 255, 255, 0.26);
+      background: rgba(6, 14, 20, 0.78);
+      backdrop-filter: blur(7px);
+      box-shadow: 0 16px 60px rgba(0, 0, 0, 0.45);
+      padding: clamp(20px, 3.2vw, 38px);
+      text-align: center;
+      display: grid;
       gap: 10px;
     }
 
-    .btn {
-      width: 100%;
-      border: 0;
-      border-radius: 12px;
-      padding: 14px 16px;
-      font-size: clamp(1rem, 1.5vw, 1.18rem);
-      font-weight: 700;
-      letter-spacing: 0.09em;
+    .result-card.success {
+      border-color: rgba(67, 214, 138, 0.55);
+      background: linear-gradient(180deg, rgba(18, 48, 36, 0.82), rgba(8, 25, 18, 0.8));
+    }
+
+    .result-card.error {
+      border-color: rgba(255, 122, 122, 0.55);
+      background: linear-gradient(180deg, rgba(64, 22, 22, 0.8), rgba(30, 11, 11, 0.78));
+    }
+
+    .result-tag {
+      justify-self: center;
+      border-radius: 999px;
+      border: 1px solid rgba(255, 255, 255, 0.32);
+      background: rgba(255, 255, 255, 0.08);
+      color: #f5fbff;
+      font-size: 0.78rem;
+      letter-spacing: 0.14em;
       text-transform: uppercase;
-      cursor: pointer;
-      transition: transform 0.15s ease, background 0.2s ease, opacity 0.2s ease;
+      padding: 8px 14px;
     }
 
-    .btn:active:not(:disabled) {
-      transform: scale(0.985);
+    .result-greeting { font-size: clamp(1.3rem, 2.5vw, 2rem); color: #e8f5fc; }
+
+    .result-kind {
+      margin-top: 4px;
+      font-size: clamp(2.3rem, 8.5vw, 6rem);
+      font-weight: 800;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: #f9fcff;
+      text-shadow: 0 6px 24px rgba(0, 0, 0, 0.45);
     }
 
-    .btn:disabled {
-      opacity: 0.55;
-      cursor: not-allowed;
+    .result-meta {
+      color: #d5e5ef;
+      font-size: clamp(0.95rem, 1.55vw, 1.1rem);
     }
 
-    .btn-primary {
-      background: linear-gradient(180deg, var(--accent), var(--accent-strong));
-      color: #f3fcff;
-    }
-
-    .btn-secondary {
-      background: rgba(255, 255, 255, 0.1);
-      border: 1px solid rgba(255, 255, 255, 0.22);
-      color: #e8f3f7;
-    }
-
-    .hint {
-      color: #94aebb;
-      font-size: 0.9rem;
-      text-align: center;
-      line-height: 1.35;
-    }
-
-    .footer {
-      text-align: center;
-      color: #88a2af;
-      font-size: 0.84rem;
-      opacity: 0.9;
-    }
+    .result-next { color: #93a8b8; font-size: 0.92rem; }
 
     @media (max-width: 980px) {
-      .main {
-        grid-template-columns: 1fr;
-        grid-template-rows: 1fr auto;
-      }
-
-      .camera-card {
-        min-height: 52vh;
-      }
+      .std-cards { grid-template-columns: 1fr; }
+      .capture-overlay { flex-direction: column; align-items: flex-start; }
     }
 
     @media (max-width: 560px) {
-      .screen {
-        padding: 10px;
-      }
-
-      .brand {
-        letter-spacing: 0.12em;
-      }
+      .view { padding: 10px; }
     }
   </style>
 </head>
 <body>
-  <div class="screen">
-    <header class="topbar">
-      <h1 class="brand">BioAttend</h1>
-      <div class="clock" id="clock">--:--:--</div>
-    </header>
+  <div class="app">
+    <div class="logo-bg" aria-hidden="true"><img src="/assets/logo-projet" alt=""></div>
 
-    <main class="main">
-      <section class="camera-card">
+    <section class="view view-standard active" id="viewStandard">
+      <header class="std-header">
+        <h1 class="std-brand">BioAttend</h1>
+        <div class="badge">Mode standard</div>
+      </header>
+
+      <main class="std-main">
+        <div class="clock-time" id="clockTime">--:--:--</div>
+        <div class="clock-date" id="clockDate">--</div>
+        <div class="std-cards">
+          <article class="card"><div class="card-title">Jour</div><div class="card-value" id="dayLabel">--</div></article>
+          <article class="card"><div class="card-title">Meteo</div><div class="card-value" id="weatherLabel">Mise a jour...</div></article>
+          <article class="card"><div class="card-title">Citation</div><div class="card-value" id="quoteLabel">Le succes, c'est la somme de petits efforts repetes chaque jour.</div></article>
+        </div>
+      </main>
+
+      <footer class="std-footer" id="stdFooter">Appuyez sur <span class="key">Espace</span> pour lancer la capture</footer>
+    </section>
+
+    <section class="view view-capture" id="viewCapture">
+      <div class="capture-wrap">
         <img id="feed" src="/snapshot" alt="Flux camera">
         <div class="scan-oval" id="scanOval"></div>
-        <div class="guide">Placez votre visage dans l'ovale</div>
-      </section>
-
-      <aside class="side">
-        <div class="status" id="status">
-          <div class="status-title" id="statusTitle">Pret pour pointage</div>
-          <div class="status-info" id="statusInfo">Appuyez sur Pointer ou sur Espace</div>
+        <div class="scan-line" aria-hidden="true"></div>
+        <div class="capture-overlay">
+          <div class="capture-title">Mode capture</div>
+          <div class="capture-help">Centrez votre visage dans l'ovale</div>
         </div>
-        <div></div>
-        <div class="actions">
-          <button class="btn btn-primary" id="btnPointage" type="button">Pointer</button>
-          <button class="btn btn-secondary" id="btnFullscreen" type="button">Plein ecran</button>
-            <p class="hint" id="kioskHint">Conseil: lancez le navigateur en mode kiosk pour un vrai plein ecran permanent.</p>
+        <div class="capture-status">
+          <div class="capture-status-main" id="captureStatusMain">Preparation de la reconnaissance...</div>
+          <div class="capture-status-sub" id="captureStatusSub">Ne bougez pas pendant la lecture</div>
         </div>
-      </aside>
-    </main>
+      </div>
+    </section>
 
-    <footer class="footer">Station de pointage locale</footer>
+    <section class="view view-result" id="viewResult">
+      <div class="result-bg-word">BioAttend</div>
+      <div class="result-card" id="resultCard">
+        <div class="result-tag" id="resultTag">Resultat</div>
+        <div class="result-greeting" id="resultGreeting">Traitement en cours...</div>
+        <div class="result-kind" id="resultKind">--</div>
+        <div class="result-meta" id="resultMeta">--</div>
+        <div class="result-next">Retour automatique au mode standard</div>
+      </div>
+    </section>
   </div>
 
   <script>
     var feed = document.getElementById('feed');
-    var btnPointage = document.getElementById('btnPointage');
-    var btnFullscreen = document.getElementById('btnFullscreen');
     var scanOval = document.getElementById('scanOval');
-    var status = document.getElementById('status');
-    var statusTitle = document.getElementById('statusTitle');
-    var statusInfo = document.getElementById('statusInfo');
-    var clock = document.getElementById('clock');
-    var kioskHint = document.getElementById('kioskHint');
+    var viewStandard = document.getElementById('viewStandard');
+    var viewCapture = document.getElementById('viewCapture');
+    var viewResult = document.getElementById('viewResult');
+    var clockTime = document.getElementById('clockTime');
+    var clockDate = document.getElementById('clockDate');
+    var dayLabel = document.getElementById('dayLabel');
+    var quoteLabel = document.getElementById('quoteLabel');
+    var weatherLabel = document.getElementById('weatherLabel');
+    var stdFooter = document.getElementById('stdFooter');
+    var captureStatusMain = document.getElementById('captureStatusMain');
+    var captureStatusSub = document.getElementById('captureStatusSub');
+    var resultCard = document.getElementById('resultCard');
+    var resultTag = document.getElementById('resultTag');
+    var resultGreeting = document.getElementById('resultGreeting');
+    var resultKind = document.getElementById('resultKind');
+    var resultMeta = document.getElementById('resultMeta');
+
     var KIOSK_MODE = __KIOSK_MODE__;
     var CAMERA_MIRROR = __CAMERA_MIRROR__;
     var SHOW_BOXES = new URLSearchParams(window.location.search).get('boxes') === '1';
 
     var streamRunning = false;
     var streamTimer = null;
+    var recognitionInProgress = false;
+    var resultTimer = null;
+    var quoteIndex = 0;
 
-    function setStatus(mode, title, info) {
-      status.className = 'status' + (mode ? ' ' + mode : '');
-      scanOval.className = 'scan-oval' + (mode ? ' ' + mode : '');
-      statusTitle.textContent = title;
-      statusInfo.textContent = info;
+    var quotes = [
+      'Le succes, c\'est la somme de petits efforts repetes chaque jour.',
+      'Chaque jour est une nouvelle chance de faire mieux.',
+      'La discipline est le pont entre objectif et accomplissement.',
+      'Commencez par etre present, le reste suivra.'
+    ];
+
+    function setMode(mode) {
+      viewStandard.classList.toggle('active', mode === 'standard');
+      viewCapture.classList.toggle('active', mode === 'capture');
+      viewResult.classList.toggle('active', mode === 'result');
+    }
+
+    function setCaptureStatus(mainText, subText, mood) {
+      captureStatusMain.textContent = mainText;
+      captureStatusSub.textContent = subText;
+      scanOval.className = 'scan-oval' + (mood ? ' ' + mood : '');
     }
 
     function scheduleNextFrame(delay) {
-      if (!streamRunning) {
-        return;
-      }
+      if (!streamRunning) return;
       clearTimeout(streamTimer);
       streamTimer = setTimeout(function() {
         feed.src = '/snapshot?boxes=' + (SHOW_BOXES ? '1' : '0') + '&t=' + Date.now();
@@ -338,9 +497,7 @@ _UI_HTML = """\
     }
 
     function startStream() {
-      if (streamRunning) {
-        return;
-      }
+      if (streamRunning) return;
       streamRunning = true;
       scheduleNextFrame(0);
     }
@@ -351,110 +508,151 @@ _UI_HTML = """\
       streamTimer = null;
     }
 
-    feed.addEventListener('load', function() {
-      scheduleNextFrame(90);
-    });
-
-    feed.addEventListener('error', function() {
-      scheduleNextFrame(180);
-    });
+    feed.addEventListener('load', function() { scheduleNextFrame(90); });
+    feed.addEventListener('error', function() { scheduleNextFrame(180); });
 
     function updateClock() {
       var now = new Date();
-      var time = now.toLocaleTimeString('fr-FR');
-      var date = now.toLocaleDateString('fr-FR', {
-        weekday: 'short',
-        day: '2-digit',
-        month: '2-digit',
-        year: 'numeric'
+      clockTime.textContent = now.toLocaleTimeString('fr-FR');
+      clockDate.textContent = now.toLocaleDateString('fr-FR', {
+        weekday: 'short', day: '2-digit', month: 'long', year: 'numeric'
       });
-      clock.textContent = time + '  |  ' + date;
+      dayLabel.textContent = now.toLocaleDateString('fr-FR', { weekday: 'long' });
     }
 
     async function enterFullscreen() {
       var el = document.documentElement;
       if (!document.fullscreenElement && el.requestFullscreen) {
-        try {
-          await el.requestFullscreen();
-        } catch (e) {
-          return;
-        }
+        try { await el.requestFullscreen(); } catch (e) { return; }
       }
     }
 
-    async function startPointage() {
-      btnPointage.disabled = true;
+    function rotateQuote() {
+      quoteIndex = (quoteIndex + 1) % quotes.length;
+      quoteLabel.textContent = quotes[quoteIndex];
+    }
+
+    function updateWeather() {
+      if (!('geolocation' in navigator)) {
+        weatherLabel.textContent = 'GPS indisponible';
+        return;
+      }
+      navigator.geolocation.getCurrentPosition(async function(pos) {
+        var lat = pos.coords.latitude;
+        var lon = pos.coords.longitude;
+        try {
+          var url = 'https://api.open-meteo.com/v1/forecast?latitude=' + lat + '&longitude=' + lon + '&current=temperature_2m&timezone=auto';
+          var resp = await fetch(url);
+          if (!resp.ok) throw new Error('meteo');
+          var data = await resp.json();
+          if (!data.current || typeof data.current.temperature_2m !== 'number') throw new Error('meteo');
+          weatherLabel.textContent = Math.round(data.current.temperature_2m) + '°C';
+        } catch (e) {
+          weatherLabel.textContent = 'Meteo indisponible';
+        }
+      }, function() {
+        weatherLabel.textContent = 'Localisation refusee';
+      }, { timeout: 7000, maximumAge: 600000 });
+    }
+
+    function showResultSuccess(data) {
+      var type = data.pointage_type === 'ENTREE' ? 'ENTREE' : 'SORTIE';
+      var now = new Date();
+      resultCard.className = 'result-card success';
+      resultTag.textContent = 'Pointage valide';
+      resultGreeting.textContent = 'Bonjour ' + data.full_name;
+      resultKind.textContent = type;
+      resultMeta.textContent = 'Heure: ' + now.toLocaleTimeString('fr-FR') + ' | Date: ' + now.toLocaleDateString('fr-FR');
+    }
+
+    function showResultError(data) {
+      var errorType = data.error_type || 'recognition_failed';
+      var titleByType = {
+        no_face_detected: 'Visage non detecte',
+        recognition_failed: 'Echec de reconnaissance',
+        unknown_user: 'Utilisateur inconnu',
+        spoof_attempt: 'Anti-spoof'
+      };
+      resultCard.className = 'result-card error';
+      resultTag.textContent = titleByType[errorType] || 'Pointage refuse';
+      resultGreeting.textContent = data.error || 'Veuillez recommencer';
+      resultKind.textContent = 'ECHEC';
+      resultMeta.textContent = 'Heure: ' + new Date().toLocaleTimeString('fr-FR');
+    }
+
+    function backToStandardSoon() {
+      clearTimeout(resultTimer);
+      resultTimer = setTimeout(function() {
+        recognitionInProgress = false;
+        setMode('standard');
+        setCaptureStatus('Preparation de la reconnaissance...', 'Ne bougez pas pendant la lecture', '');
+        stdFooter.innerHTML = 'Appuyez sur <span class="key">Espace</span> pour lancer la capture';
+      }, 4200);
+    }
+
+    async function startCaptureFlow() {
+      if (recognitionInProgress) return;
+      recognitionInProgress = true;
+      clearTimeout(resultTimer);
+      setMode('capture');
+      setCaptureStatus('Preparation de la reconnaissance...', 'Cadrez votre visage dans l\'ovale', '');
+      startStream();
+      await enterFullscreen();
+      await new Promise(function(resolve) { setTimeout(resolve, 700); });
+
       stopStream();
-      setStatus('', 'Identification en cours...', 'Veuillez patienter');
+      setCaptureStatus('Identification en cours...', 'Veuillez patienter', '');
       try {
         var resp = await fetch('/pointage', { method: 'POST' });
         var data = await resp.json();
+        setMode('result');
         if (data.ok && data.matched) {
-          var type = data.pointage_type === 'ENTREE' ? 'Entr\u00e9e' : 'Sortie';
-          var heure = new Date().toLocaleTimeString('fr-FR');
-          setStatus('success', 'Identifie: ' + data.full_name, type + ' a ' + heure);
+          showResultSuccess(data);
         } else {
-          var errorType = data.error_type || 'recognition_failed';
-          var titleByType = {
-            no_face_detected: 'Visage non detecte',
-            recognition_failed: 'Echec de reconnaissance',
-            unknown_user: 'Utilisateur inconnu',
-            spoof_attempt: 'Anti-spoof'
-          };
-          var loggedText = data.event_logged === true ? 'journalise plateforme: oui' : 'journalise plateforme: non';
-          setStatus('error', titleByType[errorType] || 'Non reconnu', (data.error || 'Veuillez reessayer') + ' | ' + loggedText);
+          showResultError(data);
         }
       } catch (e) {
-        setStatus('error', 'Erreur reseau', 'Connexion API indisponible');
+        setMode('result');
+        showResultError({ error: 'Connexion API indisponible', error_type: 'recognition_failed' });
       }
-      setTimeout(function() {
-        setStatus('', 'Pret pour pointage', 'Appuyez sur Pointer ou sur Espace');
-        btnPointage.disabled = false;
-        startStream();
-      }, 3500);
+      backToStandardSoon();
     }
 
-    btnPointage.addEventListener('click', startPointage);
-    btnFullscreen.addEventListener('click', enterFullscreen);
+    viewStandard.addEventListener('pointerdown', function() {
+      if (!recognitionInProgress) startCaptureFlow();
+    });
 
     document.addEventListener('keydown', function(e) {
-      if ((e.code === 'Space' || e.code === 'Enter') && !btnPointage.disabled) {
+      if ((e.code === 'Space' || e.code === 'Enter') && !recognitionInProgress) {
         e.preventDefault();
-        startPointage();
+        startCaptureFlow();
       }
-      if (e.key === 'f' || e.key === 'F') {
-        enterFullscreen();
-      }
+      if (e.key === 'f' || e.key === 'F') enterFullscreen();
     });
 
     if (KIOSK_MODE) {
-      btnFullscreen.style.display = 'none';
-      kioskHint.textContent = 'Mode kiosk actif';
-
+      stdFooter.innerHTML = 'Mode kiosk actif | Lancez la capture avec <span class="key">Espace</span>';
       document.addEventListener('pointerdown', function autoKiosk() {
         enterFullscreen();
         document.removeEventListener('pointerdown', autoKiosk);
       }, { once: true });
-
       document.addEventListener('keydown', function autoKioskKey() {
         enterFullscreen();
         document.removeEventListener('keydown', autoKioskKey);
       }, { once: true });
     }
 
-    if (CAMERA_MIRROR) {
-      feed.style.transform = 'scaleX(-1)';
-    }
+    if (CAMERA_MIRROR) feed.style.transform = 'scaleX(-1)';
 
     updateClock();
     setInterval(updateClock, 1000);
-    startStream();
+    setInterval(rotateQuote, 18000);
+    updateWeather();
+    setInterval(updateWeather, 300000);
   </script>
 </body>
 </html>
 """
-
-
 def create_app() -> Flask:
     settings = Settings.from_env()
     app = Flask(__name__)
@@ -692,6 +890,13 @@ def create_app() -> Flask:
         html = html.replace("__KIOSK_MODE__", "true" if settings.kiosk_mode else "false")
         html = html.replace("__CAMERA_MIRROR__", "true" if settings.camera_mirror else "false")
         return html, 200, {"Content-Type": "text/html; charset=utf-8"}
+
+    @app.get("/assets/logo-projet")
+    def logo_projet() -> object:
+        logo_path = _PROJECT_ROOT / "Logo projet.png"
+        if not logo_path.exists():
+            return ("", 404)
+        return send_file(logo_path)
 
     @app.post("/diagnostics/liveness")
     @app.get("/diagnostics/liveness")
