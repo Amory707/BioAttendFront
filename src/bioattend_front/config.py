@@ -19,6 +19,17 @@ def _to_int(value: str | None, default: int) -> int:
     return int(value)
 
 
+def _normalize_trigger_mode(value: str | None) -> str:
+    raw = (value or "space").strip().lower()
+    aliases = {
+        "space": "space",
+        "keyboard": "space",
+        "clavier": "space",
+        "pir": "pir",
+    }
+    return aliases.get(raw, "space")
+
+
 def _resolve_env_file() -> Path:
     return Path(__file__).resolve().parents[2] / ".env"
 
@@ -52,6 +63,7 @@ class Settings:
     events_url: str
     api_token: str
     api_timeout_seconds: int
+    pointage_trigger_mode: str
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -86,6 +98,7 @@ class Settings:
             events_url=os.getenv("EVENTS_URL", "").strip(),
             api_token=os.getenv("API_TOKEN", "").strip(),
             api_timeout_seconds=_to_int(os.getenv("API_TIMEOUT_SECONDS"), default=8),
+            pointage_trigger_mode=_normalize_trigger_mode(os.getenv("POINTAGE_TRIGGER_MODE")),
         )
 
     def as_public_dict(self) -> dict[str, object]:

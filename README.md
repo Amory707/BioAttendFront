@@ -82,6 +82,7 @@ Créer un fichier `.env` à la racine du projet. Ce fichier **ne doit jamais êt
 # ── Mode debug Flask ──────────────────────────────────────────────
 DEBUG=false
 KIOSK_MODE=true          # Active l'UI borne plein écran
+POINTAGE_TRIGGER_MODE=space   # "space" (clavier/touch) ou "pir" (declenchement capteur presence)
 
 # ── Caméra ───────────────────────────────────────────────────────
 CAMERA_WIDTH=1280
@@ -128,6 +129,7 @@ LIVENESS_LIVE_CLASS_IDX=0
 | `DEVICE_NAME` | Nom logique de la pointeuse | `bioattend-pi` ou un identifiant unique |
 | `DEBUG` | Active le mode debug Flask | `false` en production |
 | `KIOSK_MODE` | Active le comportement borne (plein écran auto) | `true` sur Raspberry Pi |
+| `POINTAGE_TRIGGER_MODE` | Source de déclenchement du pointage | `space` ou `pir` |
 
 ---
 

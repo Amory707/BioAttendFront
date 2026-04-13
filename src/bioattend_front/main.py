@@ -407,7 +407,7 @@ _UI_HTML = """\
         </div>
       </main>
 
-      <footer class="std-footer" id="stdFooter">Appuyez sur <span class="key">Espace</span> pour lancer la capture</footer>
+      <footer class="std-footer" id="stdFooter">En attente de declenchement du pointage</footer>
     </section>
 
     <section class="view view-capture" id="viewCapture">
@@ -457,6 +457,8 @@ _UI_HTML = """\
 
     var KIOSK_MODE = "__KIOSK_MODE__" === "true";
     var CAMERA_MIRROR = "__CAMERA_MIRROR__" === "true";
+    var POINTAGE_TRIGGER_MODE = "__POINTAGE_TRIGGER_MODE__";
+    var MANUAL_TRIGGER_ENABLED = POINTAGE_TRIGGER_MODE === "space";
 
     function getQueryParam(name) {
       var search = window.location.search || "";
@@ -489,6 +491,15 @@ _UI_HTML = """\
       captureStatusMain.textContent = mainText;
       captureStatusSub.textContent = subText;
       scanOval.className = "scan-oval" + (mood ? " " + mood : "");
+    }
+
+    function updateTriggerFooterText() {
+      if (!stdFooter) return;
+      if (MANUAL_TRIGGER_ENABLED) {
+        stdFooter.innerHTML = "Appuyez sur Espace pour lancer la capture";
+        return;
+      }
+      stdFooter.textContent = "Mode PIR actif: declenchement automatique sur detection de presence";
     }
 
     function scheduleNextFrame(delay) {
@@ -663,7 +674,7 @@ _UI_HTML = """\
         recognitionInProgress = false;
         setMode("standard");
         setCaptureStatus("Preparation de la reconnaissance...", "Ne bougez pas pendant la lecture", "");
-        stdFooter.innerHTML = "Appuyez sur Espace pour lancer la capture";
+        updateTriggerFooterText();
       }, 4200);
     }
 
@@ -705,11 +716,13 @@ _UI_HTML = """\
     }
 
     if (viewStandard) {
-      if ("onpointerdown" in window) {
-        viewStandard.addEventListener("pointerdown", triggerCaptureFromUserInput);
+      if (MANUAL_TRIGGER_ENABLED) {
+        if ("onpointerdown" in window) {
+          viewStandard.addEventListener("pointerdown", triggerCaptureFromUserInput);
+        }
+        viewStandard.addEventListener("click", triggerCaptureFromUserInput);
+        viewStandard.addEventListener("touchstart", triggerCaptureFromUserInput, false);
       }
-      viewStandard.addEventListener("click", triggerCaptureFromUserInput);
-      viewStandard.addEventListener("touchstart", triggerCaptureFromUserInput, false);
     }
 
     function onKeydown(e) {
@@ -718,7 +731,7 @@ _UI_HTML = """\
       var code = e.code || "";
       var isSpace = code === "Space" || pressedKey === " " || pressedKey === "spacebar" || e.keyCode === 32;
       var isEnter = code === "Enter" || pressedKey === "enter" || e.keyCode === 13;
-      if (isSpace || isEnter) {
+      if (MANUAL_TRIGGER_ENABLED && (isSpace || isEnter)) {
         e.preventDefault();
         if (!recognitionInProgress) startCaptureFlow();
         return;
@@ -731,7 +744,7 @@ _UI_HTML = """\
 
     document.body.addEventListener("click", function() { document.body.focus(); });
 
-    if (KIOSK_MODE) {
+    if (KIOSK_MODE && MANUAL_TRIGGER_ENABLED) {
       stdFooter.innerHTML = "Mode kiosk actif \u2014 appuyez sur Espace pour capturer";
       document.addEventListener("pointerdown", function() {
         enterFullscreen();
@@ -739,6 +752,8 @@ _UI_HTML = """\
     }
 
     if (CAMERA_MIRROR) feed.style.transform = "scaleX(-1)";
+
+    updateTriggerFooterText();
 
     updateClock();
     setInterval(updateClock, 1000);
@@ -1017,6 +1032,7 @@ def create_app() -> Flask:
         html = _UI_HTML
         html = html.replace("__KIOSK_MODE__", "true" if settings.kiosk_mode else "false")
         html = html.replace("__CAMERA_MIRROR__", "true" if settings.camera_mirror else "false")
+        html = html.replace("__POINTAGE_TRIGGER_MODE__", settings.pointage_trigger_mode)
         return html, 200, {"Content-Type": "text/html; charset=utf-8"}
 
     @app.get("/assets/logo-projet")
