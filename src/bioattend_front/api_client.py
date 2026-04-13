@@ -16,6 +16,7 @@ def _build_headers(settings: Settings) -> dict[str, str]:
     return headers
 
 
+
 def identify_embedding(embedding: list[float], settings: Settings) -> dict[str, Any]:
     if not settings.server_url:
         return {"ok": False, "error": "SERVER_URL is empty."}
