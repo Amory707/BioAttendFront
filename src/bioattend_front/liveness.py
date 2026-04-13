@@ -86,8 +86,7 @@ def _resolve_live_class_idx(requested_idx: int, class_count: int) -> tuple[int, 
     if requested_idx < 0:
         return 0, f"LIVENESS_LIVE_CLASS_IDX={requested_idx} < 0, fallback to 0"
     if requested_idx >= class_count:
-        fallback = class_count - 1
-        return fallback, f"LIVENESS_LIVE_CLASS_IDX={requested_idx} out of range for {class_count} classes, fallback to {fallback}"
+        return 0, f"LIVENESS_LIVE_CLASS_IDX={requested_idx} out of range for {class_count} classes, fallback to 0"
     return requested_idx, None
 
 
