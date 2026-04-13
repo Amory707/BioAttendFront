@@ -24,33 +24,23 @@ _UI_HTML = """\
   <title>BioAttend | Pointeuse intelligente</title>
   <style>
     :root {
-      --ink: #f4f8fa;
-      --muted: #a9bfcd;
-      --panel: rgba(8, 16, 23, 0.74);
-      --line: rgba(255, 255, 255, 0.2);
-      --ok: #43d68a;
-      --bad: #ff7a7a;
-      --bg-a: #09111a;
-      --bg-b: #02070b;
+      --ok: #3de89a;
+      --bad: #ff6b6b;
+      --accent: #42c8de;
     }
 
     * { box-sizing: border-box; margin: 0; padding: 0; }
 
-    html, body {
-      width: 100%;
-      height: 100%;
-      overflow: hidden;
-    }
+    html, body { width: 100%; height: 100%; overflow: hidden; }
 
     body {
-      color: var(--ink);
-      background: radial-gradient(1200px 600px at 10% -20%, rgba(67, 214, 138, 0.14), transparent 65%),
-        radial-gradient(900px 540px at 95% 108%, rgba(255, 184, 90, 0.16), transparent 62%),
-        linear-gradient(150deg, var(--bg-a), var(--bg-b));
-      font-family: "Bahnschrift", "Trebuchet MS", sans-serif;
+      background: #06101a;
+      font-family: "Bahnschrift", "Segoe UI", "Trebuchet MS", sans-serif;
       user-select: none;
+      color: #f0f8ff;
     }
 
+    /* ── Conteneur racine ── */
     .app {
       position: relative;
       width: 100vw;
@@ -58,25 +48,13 @@ _UI_HTML = """\
       overflow: hidden;
     }
 
-    .app::before {
-      content: "";
-      position: absolute;
-      inset: 0;
-      z-index: 0;
-      pointer-events: none;
-      background: radial-gradient(120% 90% at 50% 30%, rgba(6, 14, 24, 0.18), rgba(1, 6, 10, 0.78));
-    }
-
+    /* ── Fond plein écran ── */
     .logo-bg {
       position: absolute;
       inset: 0;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      pointer-events: none;
-      opacity: 0.28;
-      overflow: hidden;
       z-index: 0;
+      overflow: hidden;
+      pointer-events: none;
     }
 
     .logo-bg img {
@@ -84,142 +62,141 @@ _UI_HTML = """\
       height: 100%;
       object-fit: cover;
       object-position: center;
-      transform: scale(1.04);
-      filter: saturate(0.92) brightness(0.72) contrast(1.03);
+      opacity: 0.52;
+      filter: saturate(1.05) brightness(0.6);
     }
 
+    /* Vignette douce : assombrit seulement les bords haut/bas */
+    .logo-bg::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      background:
+        radial-gradient(ellipse 90% 70% at 50% 50%, rgba(5,12,22,0.4) 0%, transparent 70%),
+        linear-gradient(to bottom,
+          rgba(4,10,18,0.78) 0%,
+          rgba(4,10,18,0.0) 16%,
+          rgba(4,10,18,0.0) 80%,
+          rgba(4,10,18,0.82) 100%);
+    }
+
+    /* ── Vues ── */
     .view {
       position: absolute;
       inset: 0;
-      padding: clamp(12px, 2.4vw, 28px);
       opacity: 0;
       pointer-events: none;
-      transition: opacity 0.25s ease;
+      transition: opacity 0.3s ease;
       z-index: 1;
     }
+    .view.active { opacity: 1; pointer-events: auto; }
 
-    .view.active {
-      opacity: 1;
-      pointer-events: auto;
-    }
-
+    /* ════════════════════════
+       MODE STANDARD
+    ════════════════════════ */
     .view-standard {
-      display: grid;
-      grid-template-rows: auto 1fr auto;
-      gap: clamp(10px, 2vw, 22px);
+      display: flex;
+      flex-direction: column;
+      padding: clamp(20px, 3.5vw, 52px) clamp(24px, 5vw, 68px);
     }
 
-    .std-header {
+    /* En-tête : marque discrète */
+    .std-header { display: flex; align-items: center; }
+
+    .std-brand {
+      font-size: clamp(0.68rem, 1.1vw, 0.9rem);
+      letter-spacing: 0.38em;
+      text-transform: uppercase;
+      font-weight: 700;
+      color: rgba(255, 255, 255, 0.35);
+    }
+
+    /* Zone centrale : contenu flottant, pas de panneau */
+    .std-main {
+      flex: 1;
       display: flex;
-      justify-content: flex-start;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: clamp(12px, 2.2vw, 28px);
+      text-align: center;
+    }
+
+    /* Horloge héro */
+    .clock-time {
+      font-size: clamp(2.6rem, 9vw, 7rem);
+      font-weight: 800;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      line-height: 1.05;
+      color: #ffffff;
+      text-shadow:
+        0 0 80px rgba(66, 200, 222, 0.5),
+        0 4px 48px rgba(0, 0, 0, 0.95);
+    }
+
+    /* Météo : pilule légère */
+    .std-cards {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .card {
+      border-radius: 999px;
+      border: 1px solid rgba(255, 255, 255, 0.14);
+      background: rgba(8, 18, 30, 0.52);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      padding: 9px 26px;
+      display: flex;
       align-items: center;
       gap: 12px;
     }
 
-    .std-brand {
-      letter-spacing: 0.22em;
-      text-transform: uppercase;
-      font-weight: 700;
-      font-size: clamp(1.06rem, 2.1vw, 1.56rem);
-    }
-
-    .std-main {
-      display: grid;
-      justify-items: center;
-      align-content: center;
-      text-align: center;
-      gap: clamp(10px, 2.2vw, 22px);
-      width: min(1180px, 100%);
-      margin: 0 auto;
-      border-radius: 26px;
-      border: 1px solid rgba(255, 255, 255, 0.15);
-      background: linear-gradient(150deg, rgba(6, 14, 24, 0.52), rgba(4, 10, 17, 0.38));
-      backdrop-filter: blur(6px);
-      box-shadow: 0 20px 80px rgba(0, 0, 0, 0.35);
-      padding: clamp(16px, 2.5vw, 28px);
-    }
-
-    .clock-time {
-      font-size: clamp(1.24rem, 3.6vw, 2.5rem);
-      font-variant-numeric: tabular-nums;
-      font-weight: 800;
-      line-height: 1.2;
-      letter-spacing: 0.04em;
-      text-shadow: 0 10px 34px rgba(0, 0, 0, 0.45);
-      text-transform: uppercase;
-      color: #f3f9fd;
-    }
-
-    .clock-date {
-      color: var(--muted);
-      font-size: clamp(1rem, 2vw, 1.44rem);
-      letter-spacing: 0.08em;
-      text-transform: uppercase;
-    }
-
-    .std-cards {
-      width: min(520px, 100%);
-      display: grid;
-      grid-template-columns: 1fr;
-      gap: clamp(10px, 1.8vw, 18px);
-    }
-
-    .card {
-      border-radius: 20px;
-      border: 1px solid rgba(255, 255, 255, 0.22);
-      background: linear-gradient(145deg, rgba(8, 16, 25, 0.76), rgba(6, 13, 21, 0.64));
-      backdrop-filter: blur(10px);
-      padding: 16px;
-      min-height: 126px;
-      display: grid;
-      align-content: center;
-      justify-items: center;
-      gap: 8px;
-      box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.04);
-    }
-
     .card-title {
+      font-size: 0.66rem;
+      letter-spacing: 0.2em;
       text-transform: uppercase;
-      letter-spacing: 0.12em;
-      font-size: 0.76rem;
-      color: #d4e4ee;
+      color: rgba(255, 255, 255, 0.35);
     }
 
     .card-value {
-      font-size: clamp(1.02rem, 1.7vw, 1.24rem);
-      text-align: center;
-      color: #edf6fa;
+      font-size: clamp(0.92rem, 1.4vw, 1.08rem);
+      color: #e6f6ff;
+      font-weight: 600;
     }
 
+    /* Pied : indice Espace */
     .std-footer {
       text-align: center;
-      color: #8fa8b7;
-      font-size: clamp(0.92rem, 1.5vw, 1.04rem);
+      color: rgba(255, 255, 255, 0.28);
+      font-size: clamp(0.76rem, 1.05vw, 0.9rem);
     }
 
     .key {
       display: inline-block;
-      border: 1px solid rgba(255, 255, 255, 0.38);
-      border-bottom-width: 3px;
-      border-radius: 10px;
-      padding: 4px 10px;
-      margin: 0 2px;
-      color: #f7fbff;
-      font-size: 0.92em;
+      border: 1px solid rgba(255, 255, 255, 0.25);
+      border-bottom-width: 2px;
+      border-radius: 6px;
+      padding: 2px 9px;
+      margin: 0 3px;
+      color: rgba(255, 255, 255, 0.6);
+      font-size: 0.86em;
     }
 
-    .view-capture {
-      background: linear-gradient(180deg, rgba(2, 7, 11, 0.34), rgba(2, 7, 11, 0.76));
-    }
+    /* ════════════════════════
+       MODE CAPTURE
+    ════════════════════════ */
+    .view-capture { padding: 0; }
 
     .capture-wrap {
       position: relative;
       width: 100%;
       height: 100%;
-      border-radius: 26px;
       overflow: hidden;
-      border: 1px solid rgba(255, 255, 255, 0.2);
-      background: #010203;
+      background: #000;
     }
 
     #feed {
@@ -227,100 +204,107 @@ _UI_HTML = """\
       height: 100%;
       object-fit: cover;
       display: block;
-      background: #000;
     }
 
     .scan-oval {
       position: absolute;
       left: 50%;
       top: 50%;
-      width: clamp(250px, 34vw, 430px);
+      width: clamp(240px, 33vw, 420px);
       aspect-ratio: 0.76;
       transform: translate(-50%, -54%);
       border-radius: 50%;
-      border: 4px solid rgba(255, 255, 255, 0.72);
-      box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.28) inset;
+      border: 3px solid rgba(255, 255, 255, 0.72);
+      box-shadow:
+        0 0 0 9999px rgba(0, 0, 0, 0.38),
+        0 0 28px rgba(66, 200, 222, 0.22);
       pointer-events: none;
-      transition: border-color 0.2s ease;
+      transition: border-color 0.25s ease, box-shadow 0.25s ease;
     }
 
-    .scan-oval.success { border-color: var(--ok); }
-    .scan-oval.error { border-color: var(--bad); }
+    .scan-oval.success {
+      border-color: var(--ok);
+      box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.32), 0 0 44px rgba(61, 232, 154, 0.55);
+    }
+    .scan-oval.error {
+      border-color: var(--bad);
+      box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.32), 0 0 44px rgba(255, 107, 107, 0.55);
+    }
 
     .scan-line {
       position: absolute;
       left: 50%;
       top: 50%;
-      width: clamp(210px, 28vw, 352px);
+      width: clamp(200px, 27vw, 340px);
       height: 2px;
-      transform: translate(-50%, -70px);
-      background: linear-gradient(90deg, transparent, rgba(67, 214, 138, 0.9), transparent);
-      filter: drop-shadow(0 0 8px rgba(67, 214, 138, 0.7));
-      animation: scan 2.1s ease-in-out infinite;
+      background: linear-gradient(90deg, transparent, rgba(61, 232, 154, 0.95), transparent);
+      filter: drop-shadow(0 0 7px rgba(61, 232, 154, 0.8));
+      animation: scan 2.2s ease-in-out infinite;
       pointer-events: none;
     }
 
     @keyframes scan {
-      0% { transform: translate(-50%, -96px); opacity: 0.2; }
-      50% { transform: translate(-50%, 96px); opacity: 0.95; }
-      100% { transform: translate(-50%, -96px); opacity: 0.2; }
+      0%   { transform: translate(-50%, -90px); opacity: 0.1; }
+      50%  { transform: translate(-50%, 90px);  opacity: 1; }
+      100% { transform: translate(-50%, -90px); opacity: 0.1; }
     }
 
     .capture-overlay {
       position: absolute;
-      top: 14px;
-      left: 14px;
-      right: 14px;
+      top: 18px;
+      left: 18px;
+      right: 18px;
       display: flex;
       justify-content: space-between;
       align-items: center;
-      gap: 12px;
     }
 
     .capture-title {
-      font-size: clamp(1.08rem, 2vw, 1.58rem);
-      letter-spacing: 0.1em;
+      font-size: clamp(0.9rem, 1.7vw, 1.25rem);
+      letter-spacing: 0.14em;
       text-transform: uppercase;
-      color: #ecf8ff;
-      text-shadow: 0 6px 20px rgba(0, 0, 0, 0.55);
+      color: rgba(255, 255, 255, 0.9);
+      text-shadow: 0 2px 16px rgba(0, 0, 0, 0.7);
     }
 
     .capture-help {
       border-radius: 999px;
-      border: 1px solid rgba(255, 255, 255, 0.2);
-      background: rgba(4, 12, 19, 0.6);
-      padding: 8px 14px;
-      color: #d8e8f1;
-      font-size: 0.92rem;
-      backdrop-filter: blur(6px);
+      border: 1px solid rgba(255, 255, 255, 0.14);
+      background: rgba(6, 14, 22, 0.52);
+      backdrop-filter: blur(8px);
+      padding: 6px 14px;
+      color: rgba(255, 255, 255, 0.65);
+      font-size: 0.86rem;
     }
 
     .capture-status {
       position: absolute;
-      bottom: 16px;
+      bottom: 20px;
       left: 50%;
       transform: translateX(-50%);
-      min-width: min(90vw, 560px);
-      border-radius: 12px;
-      border: 1px solid rgba(255, 255, 255, 0.2);
-      background: rgba(3, 9, 14, 0.7);
-      backdrop-filter: blur(6px);
-      padding: 10px 16px;
+      min-width: min(88vw, 520px);
+      border-radius: 16px;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      background: rgba(4, 10, 18, 0.58);
+      backdrop-filter: blur(12px);
+      padding: 12px 20px;
       text-align: center;
-      color: #e2eef4;
     }
 
     .capture-status-main {
-      font-size: clamp(1rem, 1.8vw, 1.3rem);
+      font-size: clamp(1rem, 1.7vw, 1.25rem);
       font-weight: 700;
     }
 
     .capture-status-sub {
       margin-top: 4px;
-      font-size: clamp(0.88rem, 1.2vw, 1rem);
-      color: var(--muted);
+      font-size: clamp(0.8rem, 1.1vw, 0.94rem);
+      color: rgba(255, 255, 255, 0.42);
     }
 
+    /* ════════════════════════
+       MODE RÉSULTAT
+    ════════════════════════ */
     .view-result {
       display: grid;
       align-items: center;
@@ -329,77 +313,82 @@ _UI_HTML = """\
 
     .result-bg-word {
       position: absolute;
-      inset: auto 0 11%;
+      inset: auto 0 7%;
       text-align: center;
-      font-size: clamp(3rem, 17vw, 16rem);
-      font-weight: 800;
-      letter-spacing: 0.1em;
+      font-size: clamp(4rem, 18vw, 18rem);
+      font-weight: 900;
+      letter-spacing: 0.06em;
       text-transform: uppercase;
-      color: rgba(255, 255, 255, 0.08);
+      color: rgba(255, 255, 255, 0.04);
       pointer-events: none;
     }
 
     .result-card {
-      width: min(96vw, 960px);
-      border-radius: 22px;
-      border: 1px solid rgba(255, 255, 255, 0.26);
-      background: rgba(6, 14, 20, 0.78);
-      backdrop-filter: blur(7px);
-      box-shadow: 0 16px 60px rgba(0, 0, 0, 0.45);
-      padding: clamp(20px, 3.2vw, 38px);
+      width: min(94vw, 860px);
+      border-radius: 28px;
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      background: rgba(7, 14, 22, 0.68);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      box-shadow: 0 24px 80px rgba(0, 0, 0, 0.5);
+      padding: clamp(28px, 4.2vw, 56px) clamp(22px, 4.5vw, 58px);
       text-align: center;
       display: grid;
-      gap: 10px;
+      gap: 12px;
     }
 
     .result-card.success {
-      border-color: rgba(67, 214, 138, 0.55);
-      background: linear-gradient(180deg, rgba(18, 48, 36, 0.82), rgba(8, 25, 18, 0.8));
+      border-color: rgba(61, 232, 154, 0.28);
+      box-shadow: 0 0 70px rgba(61, 232, 154, 0.1), 0 24px 80px rgba(0, 0, 0, 0.48);
     }
-
     .result-card.error {
-      border-color: rgba(255, 122, 122, 0.55);
-      background: linear-gradient(180deg, rgba(64, 22, 22, 0.8), rgba(30, 11, 11, 0.78));
+      border-color: rgba(255, 107, 107, 0.28);
+      box-shadow: 0 0 70px rgba(255, 107, 107, 0.1), 0 24px 80px rgba(0, 0, 0, 0.48);
     }
 
     .result-tag {
       justify-self: center;
       border-radius: 999px;
-      border: 1px solid rgba(255, 255, 255, 0.32);
-      background: rgba(255, 255, 255, 0.08);
-      color: #f5fbff;
-      font-size: 0.78rem;
-      letter-spacing: 0.14em;
+      border: 1px solid rgba(255, 255, 255, 0.18);
+      background: rgba(255, 255, 255, 0.05);
+      color: rgba(255, 255, 255, 0.75);
+      font-size: 0.7rem;
+      letter-spacing: 0.18em;
       text-transform: uppercase;
-      padding: 8px 14px;
+      padding: 7px 16px;
     }
 
-    .result-greeting { font-size: clamp(1.3rem, 2.5vw, 2rem); color: #e8f5fc; }
+    .result-greeting {
+      font-size: clamp(1.3rem, 2.8vw, 2.2rem);
+      color: rgba(255, 255, 255, 0.88);
+      font-weight: 400;
+    }
 
     .result-kind {
-      margin-top: 4px;
-      font-size: clamp(2.3rem, 8.5vw, 6rem);
-      font-weight: 800;
-      letter-spacing: 0.08em;
+      font-size: clamp(2.8rem, 9.5vw, 7.5rem);
+      font-weight: 900;
+      letter-spacing: 0.06em;
       text-transform: uppercase;
-      color: #f9fcff;
-      text-shadow: 0 6px 24px rgba(0, 0, 0, 0.45);
+      color: #ffffff;
+      text-shadow: 0 4px 32px rgba(0, 0, 0, 0.65);
     }
+
+    .result-card.success .result-kind { color: var(--ok); }
+    .result-card.error   .result-kind { color: var(--bad); }
 
     .result-meta {
-      color: #d5e5ef;
-      font-size: clamp(0.95rem, 1.55vw, 1.1rem);
+      color: rgba(255, 255, 255, 0.45);
+      font-size: clamp(0.86rem, 1.35vw, 1rem);
     }
 
-    .result-next { color: #93a8b8; font-size: 0.92rem; }
-
-    @media (max-width: 980px) {
-      .std-cards { grid-template-columns: 1fr; }
-      .capture-overlay { flex-direction: column; align-items: flex-start; }
+    .result-next {
+      color: rgba(255, 255, 255, 0.24);
+      font-size: 0.82rem;
     }
 
     @media (max-width: 560px) {
-      .view { padding: 10px; }
+      .view-standard { padding: 14px 16px; }
+      .capture-overlay { flex-direction: column; align-items: flex-start; gap: 6px; }
     }
   </style>
 </head>
@@ -451,25 +440,25 @@ _UI_HTML = """\
   </div>
 
   <script>
-    var feed = document.getElementById('feed');
-    var scanOval = document.getElementById('scanOval');
-    var viewStandard = document.getElementById('viewStandard');
-    var viewCapture = document.getElementById('viewCapture');
-    var viewResult = document.getElementById('viewResult');
-    var clockTime = document.getElementById('clockTime');
-    var weatherLabel = document.getElementById('weatherLabel');
-    var stdFooter = document.getElementById('stdFooter');
-    var captureStatusMain = document.getElementById('captureStatusMain');
-    var captureStatusSub = document.getElementById('captureStatusSub');
-    var resultCard = document.getElementById('resultCard');
-    var resultTag = document.getElementById('resultTag');
-    var resultGreeting = document.getElementById('resultGreeting');
-    var resultKind = document.getElementById('resultKind');
-    var resultMeta = document.getElementById('resultMeta');
+    var feed = document.getElementById("feed");
+    var scanOval = document.getElementById("scanOval");
+    var viewStandard = document.getElementById("viewStandard");
+    var viewCapture = document.getElementById("viewCapture");
+    var viewResult = document.getElementById("viewResult");
+    var clockTime = document.getElementById("clockTime");
+    var weatherLabel = document.getElementById("weatherLabel");
+    var stdFooter = document.getElementById("stdFooter");
+    var captureStatusMain = document.getElementById("captureStatusMain");
+    var captureStatusSub = document.getElementById("captureStatusSub");
+    var resultCard = document.getElementById("resultCard");
+    var resultTag = document.getElementById("resultTag");
+    var resultGreeting = document.getElementById("resultGreeting");
+    var resultKind = document.getElementById("resultKind");
+    var resultMeta = document.getElementById("resultMeta");
 
-    var KIOSK_MODE = "__KIOSK_MODE__" === 'true';
-    var CAMERA_MIRROR = "__CAMERA_MIRROR__" === 'true';
-    var SHOW_BOXES = new URLSearchParams(window.location.search).get('boxes') === '1';
+    var KIOSK_MODE = "__KIOSK_MODE__" === "true";
+    var CAMERA_MIRROR = "__CAMERA_MIRROR__" === "true";
+    var SHOW_BOXES = new URLSearchParams(window.location.search).get("boxes") === "1";
 
     var streamRunning = false;
     var streamTimer = null;
@@ -477,22 +466,22 @@ _UI_HTML = """\
     var resultTimer = null;
 
     function setMode(mode) {
-      viewStandard.classList.toggle('active', mode === 'standard');
-      viewCapture.classList.toggle('active', mode === 'capture');
-      viewResult.classList.toggle('active', mode === 'result');
+      viewStandard.classList.toggle("active", mode === "standard");
+      viewCapture.classList.toggle("active", mode === "capture");
+      viewResult.classList.toggle("active", mode === "result");
     }
 
     function setCaptureStatus(mainText, subText, mood) {
       captureStatusMain.textContent = mainText;
       captureStatusSub.textContent = subText;
-      scanOval.className = 'scan-oval' + (mood ? ' ' + mood : '');
+      scanOval.className = "scan-oval" + (mood ? " " + mood : "");
     }
 
     function scheduleNextFrame(delay) {
       if (!streamRunning) return;
       clearTimeout(streamTimer);
       streamTimer = setTimeout(function() {
-        feed.src = '/snapshot?boxes=' + (SHOW_BOXES ? '1' : '0') + '&t=' + Date.now();
+        feed.src = "/snapshot?boxes=" + (SHOW_BOXES ? "1" : "0") + "&t=" + Date.now();
       }, delay);
     }
 
@@ -508,95 +497,104 @@ _UI_HTML = """\
       streamTimer = null;
     }
 
-    feed.addEventListener('load', function() { scheduleNextFrame(90); });
-    feed.addEventListener('error', function() { scheduleNextFrame(180); });
+    feed.addEventListener("load", function() { scheduleNextFrame(90); });
+    feed.addEventListener("error", function() { scheduleNextFrame(180); });
+
+    var _DAYS = ["Dimanche", "Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi"];
+
+    function _pad(n) { return String(n).padStart(2, "0"); }
+
+    function _fmtTime(d) {
+      return _pad(d.getHours()) + ":" + _pad(d.getMinutes()) + ":" + _pad(d.getSeconds());
+    }
+
+    function _fmtDate(d) {
+      return _pad(d.getDate()) + "/" + _pad(d.getMonth() + 1) + "/" + d.getFullYear();
+    }
 
     function updateClock() {
-      var now = new Date();
-      var time = now.toLocaleTimeString('fr-FR');
-      var weekday = now.toLocaleDateString('fr-FR', { weekday: 'long' });
-      var date = now.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric' });
-      clockTime.textContent = time + ' | ' + weekday + ' | ' + date;
+      try {
+        var now = new Date();
+        if (clockTime) {
+          clockTime.textContent = _fmtTime(now) + "  |  " + _DAYS[now.getDay()] + "  |  " + _fmtDate(now);
+        }
+      } catch(e) {}
     }
 
     async function enterFullscreen() {
       var el = document.documentElement;
       if (!document.fullscreenElement && el.requestFullscreen) {
-        try { await el.requestFullscreen(); } catch (e) { return; }
+        try { await el.requestFullscreen(); } catch (e) {}
       }
     }
 
     async function fetchWeatherFor(lat, lon) {
-      var url = 'https://api.open-meteo.com/v1/forecast?latitude=' + lat + '&longitude=' + lon + '&current=temperature_2m&timezone=auto';
+      var url = "https://api.open-meteo.com/v1/forecast?latitude=" + lat + "&longitude=" + lon + "&current=temperature_2m&timezone=auto";
       var resp = await fetch(url);
-      if (!resp.ok) throw new Error('meteo');
+      if (!resp.ok) throw new Error("meteo");
       var data = await resp.json();
-      if (!data.current || typeof data.current.temperature_2m !== 'number') throw new Error('meteo');
-      weatherLabel.textContent = Math.round(data.current.temperature_2m) + '°C';
+      if (!data.current || typeof data.current.temperature_2m !== "number") throw new Error("meteo");
+      weatherLabel.textContent = Math.round(data.current.temperature_2m) + "\u00b0C";
     }
 
     function updateWeather() {
-      if (!('geolocation' in navigator)) {
+      if (!("geolocation" in navigator)) {
         fetchWeatherFor(3.8480, 11.5021).catch(function() {
-          weatherLabel.textContent = 'Meteo indisponible';
+          weatherLabel.textContent = "Meteo indisponible";
         });
         return;
       }
       try {
         navigator.geolocation.getCurrentPosition(async function(pos) {
-          var lat = pos.coords.latitude;
-          var lon = pos.coords.longitude;
           try {
-            await fetchWeatherFor(lat, lon);
+            await fetchWeatherFor(pos.coords.latitude, pos.coords.longitude);
           } catch (e) {
-            weatherLabel.textContent = 'Meteo indisponible';
+            weatherLabel.textContent = "Meteo indisponible";
           }
         }, function() {
           fetchWeatherFor(3.8480, 11.5021).catch(function() {
-            weatherLabel.textContent = 'Meteo indisponible';
+            weatherLabel.textContent = "Meteo indisponible";
           });
         }, { timeout: 7000, maximumAge: 600000 });
       } catch (e) {
-        try {
-          fetchWeatherFor(3.8480, 11.5021);
-        } catch (e) {
-          weatherLabel.textContent = 'Meteo indisponible';
-        }
+        fetchWeatherFor(3.8480, 11.5021).catch(function() {
+          weatherLabel.textContent = "Meteo indisponible";
+        });
       }
     }
 
     function showResultSuccess(data) {
-      var type = data.pointage_type === 'ENTREE' ? 'ENTREE' : 'SORTIE';
+      var type = data.pointage_type === "ENTREE" ? "ENTREE" : "SORTIE";
       var now = new Date();
-      resultCard.className = 'result-card success';
-      resultTag.textContent = 'Pointage valide';
-      resultGreeting.textContent = 'Bonjour ' + data.full_name;
+      resultCard.className = "result-card success";
+      resultTag.textContent = "Pointage valide";
+      resultGreeting.textContent = "Bonjour " + data.full_name;
       resultKind.textContent = type;
-      resultMeta.textContent = 'Heure: ' + now.toLocaleTimeString('fr-FR') + ' | Date: ' + now.toLocaleDateString('fr-FR');
+      resultMeta.textContent = "Heure: " + _fmtTime(now) + " | Date: " + _fmtDate(now);
     }
 
     function showResultError(data) {
-      var errorType = data.error_type || 'recognition_failed';
+      var errorType = data.error_type || "recognition_failed";
       var titleByType = {
-        no_face_detected: 'Visage non detecte',
-        recognition_failed: 'Echec de reconnaissance',
-        unknown_user: 'Utilisateur inconnu',
-        spoof_attempt: 'Anti-spoof'
+        "no_face_detected": "Visage non detecte",
+        "recognition_failed": "Echec de reconnaissance",
+        "unknown_user": "Utilisateur inconnu",
+        "spoof_attempt": "Anti-spoof"
       };
-      resultCard.className = 'result-card error';
-      resultTag.textContent = titleByType[errorType] || 'Pointage refuse';
-      resultGreeting.textContent = data.error || 'Veuillez recommencer';
-      resultKind.textContent = 'ECHEC';
-      resultMeta.textContent = 'Heure: ' + new Date().toLocaleTimeString('fr-FR');
+      resultCard.className = "result-card error";
+      resultTag.textContent = titleByType[errorType] || "Pointage refuse";
+      resultGreeting.textContent = data.error || "Veuillez recommencer";
+      resultKind.textContent = "ECHEC";
+      resultMeta.textContent = "Heure: " + _fmtTime(new Date());
     }
 
     function backToStandardSoon() {
       clearTimeout(resultTimer);
       resultTimer = setTimeout(function() {
         recognitionInProgress = false;
-        setMode('standard');
-        setCaptureStatus('Preparation de la reconnaissance...', 'Ne bougez pas pendant la lecture', '');
-        stdFooter.innerHTML = 'Appuyez sur <span class="key">Espace</span> pour lancer la capture';
+        setMode("standard");
+        setCaptureStatus("Preparation de la reconnaissance...", "Ne bougez pas pendant la lecture", "");
+        stdFooter.innerHTML = "Appuyez sur <span class=\"key\">Espace</span> pour lancer la capture";
       }, 4200);
     }
 
@@ -604,61 +602,58 @@ _UI_HTML = """\
       if (recognitionInProgress) return;
       recognitionInProgress = true;
       clearTimeout(resultTimer);
-      setMode('capture');
-      setCaptureStatus('Preparation de la reconnaissance...', 'Cadrez votre visage dans l\'ovale', '');
+      setMode("capture");
+      setCaptureStatus("Preparation de la reconnaissance...", "Cadrez votre visage dans l\u2019ovale", "");
       startStream();
-      await enterFullscreen();
+      enterFullscreen();
       await new Promise(function(resolve) { setTimeout(resolve, 700); });
 
       stopStream();
-      setCaptureStatus('Identification en cours...', 'Veuillez patienter', '');
+      setCaptureStatus("Identification en cours...", "Veuillez patienter", "");
       try {
-        var resp = await fetch('/pointage', { method: 'POST' });
+        var resp = await fetch("/pointage", { method: "POST" });
         var data = await resp.json();
-        setMode('result');
+        setMode("result");
         if (data.ok && data.matched) {
           showResultSuccess(data);
         } else {
           showResultError(data);
         }
       } catch (e) {
-        setMode('result');
-        showResultError({ error: 'Connexion API indisponible', error_type: 'recognition_failed' });
+        setMode("result");
+        showResultError({ error: "Connexion API indisponible", error_type: "recognition_failed" });
       }
       backToStandardSoon();
     }
 
-    viewStandard.addEventListener('pointerdown', function() {
+    viewStandard.addEventListener("pointerdown", function(e) {
+      e.preventDefault();
       if (!recognitionInProgress) startCaptureFlow();
     });
 
-    function tryStartFromKey(e) {
-      if ((e.code === 'Space' || e.code === 'Enter') && !recognitionInProgress) {
+    document.addEventListener("keydown", function(e) {
+      if (e.repeat) return;
+      var isSpace = e.code === "Space" || e.keyCode === 32;
+      var isEnter = e.code === "Enter" || e.keyCode === 13;
+      if (isSpace || isEnter) {
         e.preventDefault();
-        startCaptureFlow();
+        if (!recognitionInProgress) startCaptureFlow();
+        return;
       }
-      if (e.key === 'f' || e.key === 'F') {
-        enterFullscreen();
-      }
-    }
+      if (e.key === "f" || e.key === "F") enterFullscreen();
+    });
 
-    document.addEventListener('keydown', tryStartFromKey);
-    window.addEventListener('keydown', tryStartFromKey);
-    document.body.addEventListener('click', function() { window.focus(); });
+    document.body.addEventListener("click", function() { document.body.focus(); });
 
     if (KIOSK_MODE) {
-      stdFooter.innerHTML = 'Mode kiosk actif | Lancez la capture avec <span class="key">Espace</span>';
-      document.addEventListener('pointerdown', function autoKiosk() {
+      stdFooter.innerHTML = "Mode kiosk actif \u2014 appuyez sur <span class=\"key\">Espace</span> pour capturer";
+      document.addEventListener("pointerdown", function autoKiosk() {
         enterFullscreen();
-        document.removeEventListener('pointerdown', autoKiosk);
-      }, { once: true });
-      document.addEventListener('keydown', function autoKioskKey() {
-        enterFullscreen();
-        document.removeEventListener('keydown', autoKioskKey);
+        document.removeEventListener("pointerdown", autoKiosk);
       }, { once: true });
     }
 
-    if (CAMERA_MIRROR) feed.style.transform = 'scaleX(-1)';
+    if (CAMERA_MIRROR) feed.style.transform = "scaleX(-1)";
 
     updateClock();
     setInterval(updateClock, 1000);
