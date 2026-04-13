@@ -539,51 +539,91 @@ _UI_HTML = """\
       var el = document.documentElement;
       if (!document.fullscreenElement && el.requestFullscreen) {
         try {
-          var maybePromise = el.requestFullscreen();
-          if (maybePromise && typeof maybePromise.catch === "function") {
-            maybePromise.catch(function() {});
-          }
+          el.requestFullscreen();
         } catch (e) {}
       }
     }
 
-    function fetchWeatherFor(lat, lon) {
-      var url = "https://api.open-meteo.com/v1/forecast?latitude=" + lat + "&longitude=" + lon + "&current=temperature_2m&timezone=auto";
-      if (typeof fetch !== "function") {
-        return Promise.reject(new Error("fetch_unavailable"));
+    function _jsonGet(url, onSuccess, onError) {
+      try {
+        var xhr = new XMLHttpRequest();
+        xhr.open("GET", url, true);
+        xhr.onreadystatechange = function() {
+          if (xhr.readyState !== 4) return;
+          if (xhr.status >= 200 && xhr.status < 300) {
+            try {
+              var payload = JSON.parse(xhr.responseText || "{}");
+              onSuccess(payload);
+            } catch (err) {
+              onError(err);
+            }
+            return;
+          }
+          onError(new Error("http_" + xhr.status));
+        };
+        xhr.onerror = function() { onError(new Error("network")); };
+        xhr.send();
+      } catch (err) {
+        onError(err);
       }
-      return fetch(url).then(function(resp) {
-        if (!resp.ok) throw new Error("meteo");
-        return resp.json();
-      }).then(function(data) {
+    }
+
+    function _jsonPost(url, body, onSuccess, onError) {
+      try {
+        var xhr = new XMLHttpRequest();
+        xhr.open("POST", url, true);
+        xhr.setRequestHeader("Content-Type", "application/json");
+        xhr.onreadystatechange = function() {
+          if (xhr.readyState !== 4) return;
+          if (xhr.status >= 200 && xhr.status < 300) {
+            try {
+              var payload = JSON.parse(xhr.responseText || "{}");
+              onSuccess(payload);
+            } catch (err) {
+              onError(err);
+            }
+            return;
+          }
+          onError(new Error("http_" + xhr.status));
+        };
+        xhr.onerror = function() { onError(new Error("network")); };
+        xhr.send(body ? JSON.stringify(body) : "{}");
+      } catch (err) {
+        onError(err);
+      }
+    }
+
+    function fetchWeatherFor(lat, lon, onSuccess, onError) {
+      var url = "https://api.open-meteo.com/v1/forecast?latitude=" + lat + "&longitude=" + lon + "&current=temperature_2m&timezone=auto";
+      _jsonGet(url, function(data) {
         if (!data.current || typeof data.current.temperature_2m !== "number") {
-          throw new Error("meteo");
+          onError(new Error("meteo"));
+          return;
         }
-        if (weatherLabel) {
-          weatherLabel.textContent = Math.round(data.current.temperature_2m) + "\u00b0C";
-        }
-      });
+        if (weatherLabel) weatherLabel.textContent = Math.round(data.current.temperature_2m) + "\u00b0C";
+        onSuccess();
+      }, onError);
     }
 
     function updateWeather() {
       if (!("geolocation" in navigator)) {
-        fetchWeatherFor(3.8480, 11.5021).catch(function() {
+        fetchWeatherFor(3.8480, 11.5021, function() {}, function() {
           if (weatherLabel) weatherLabel.textContent = "Meteo indisponible";
         });
         return;
       }
       try {
         navigator.geolocation.getCurrentPosition(function(pos) {
-          fetchWeatherFor(pos.coords.latitude, pos.coords.longitude).catch(function() {
+          fetchWeatherFor(pos.coords.latitude, pos.coords.longitude, function() {}, function() {
             if (weatherLabel) weatherLabel.textContent = "Meteo indisponible";
           });
         }, function() {
-          fetchWeatherFor(3.8480, 11.5021).catch(function() {
+          fetchWeatherFor(3.8480, 11.5021, function() {}, function() {
             if (weatherLabel) weatherLabel.textContent = "Meteo indisponible";
           });
         }, { timeout: 7000, maximumAge: 600000 });
       } catch (e) {
-        fetchWeatherFor(3.8480, 11.5021).catch(function() {
+        fetchWeatherFor(3.8480, 11.5021, function() {}, function() {
           if (weatherLabel) weatherLabel.textContent = "Meteo indisponible";
         });
       }
@@ -635,29 +675,19 @@ _UI_HTML = """\
       setTimeout(function() {
         stopStream();
         setCaptureStatus("Identification en cours...", "Veuillez patienter", "");
-        if (typeof fetch !== "function") {
+        _jsonPost("/pointage", {}, function(data) {
           setMode("result");
-          showResultError({ error: "Navigateur non compatible", error_type: "recognition_failed" });
+          if (data.ok && data.matched) {
+            showResultSuccess(data);
+          } else {
+            showResultError(data);
+          }
           backToStandardSoon();
-          return;
-        }
-        fetch("/pointage", { method: "POST" })
-          .then(function(resp) { return resp.json(); })
-          .then(function(data) {
-            setMode("result");
-            if (data.ok && data.matched) {
-              showResultSuccess(data);
-            } else {
-              showResultError(data);
-            }
-          })
-          .catch(function() {
-            setMode("result");
-            showResultError({ error: "Connexion API indisponible", error_type: "recognition_failed" });
-          })
-          .finally(function() {
-            backToStandardSoon();
-          });
+        }, function() {
+          setMode("result");
+          showResultError({ error: "Connexion API indisponible", error_type: "recognition_failed" });
+          backToStandardSoon();
+        });
       }, 700);
     }
 
@@ -671,21 +701,21 @@ _UI_HTML = """\
         viewStandard.addEventListener("pointerdown", triggerCaptureFromUserInput);
       }
       viewStandard.addEventListener("click", triggerCaptureFromUserInput);
-      viewStandard.addEventListener("touchstart", triggerCaptureFromUserInput, { passive: false });
+      viewStandard.addEventListener("touchstart", triggerCaptureFromUserInput, false);
     }
 
     function onKeydown(e) {
       if (e.repeat) return;
-      var key = (e.key || "").toLowerCase();
+      var pressedKey = (e.key || "").toLowerCase();
       var code = e.code || "";
-      var isSpace = code === "Space" || key === " " || key === "spacebar" || e.keyCode === 32;
-      var isEnter = code === "Enter" || key === "enter" || e.keyCode === 13;
+      var isSpace = code === "Space" || pressedKey === " " || pressedKey === "spacebar" || e.keyCode === 32;
+      var isEnter = code === "Enter" || pressedKey === "enter" || e.keyCode === 13;
       if (isSpace || isEnter) {
         e.preventDefault();
         if (!recognitionInProgress) startCaptureFlow();
         return;
       }
-      if (key === "f") enterFullscreen();
+      if (pressedKey === "f") enterFullscreen();
     }
 
     document.addEventListener("keydown", onKeydown);
@@ -695,10 +725,9 @@ _UI_HTML = """\
 
     if (KIOSK_MODE) {
       stdFooter.innerHTML = "Mode kiosk actif \u2014 appuyez sur <span class=\"key\">Espace</span> pour capturer";
-      document.addEventListener("pointerdown", function autoKiosk() {
+      document.addEventListener("pointerdown", function() {
         enterFullscreen();
-        document.removeEventListener("pointerdown", autoKiosk);
-      }, { once: true });
+      }, false);
     }
 
     if (CAMERA_MIRROR) feed.style.transform = "scaleX(-1)";
