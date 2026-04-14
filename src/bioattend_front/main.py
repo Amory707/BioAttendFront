@@ -63,8 +63,8 @@ _UI_HTML = """\
       height: 100%;
       object-fit: cover;
       object-position: center;
-      opacity: 0.18;
-      filter: saturate(1.03) brightness(0.82);
+      opacity: 0.34;
+      filter: saturate(1.02) brightness(1.0);
     }
 
     /* Vignette douce : assombrit seulement les bords haut/bas */
@@ -74,12 +74,11 @@ _UI_HTML = """\
       inset: 0;
       pointer-events: none;
       background:
-        radial-gradient(ellipse 90% 70% at 50% 50%, rgba(5,12,22,0.18) 0%, transparent 70%),
         linear-gradient(to bottom,
-          rgba(4,10,18,0.34) 0%,
+          rgba(4,10,18,0.10) 0%,
           rgba(4,10,18,0.0) 16%,
           rgba(4,10,18,0.0) 80%,
-          rgba(4,10,18,0.42) 100%);
+          rgba(4,10,18,0.12) 100%);
     }
 
     /* ── Vues ── */
@@ -662,37 +661,60 @@ _UI_HTML = """\
       }
     }
 
-    function fetchWeatherFor(lat, lon, onSuccess, onError) {
-      var url = "https://api.open-meteo.com/v1/forecast?latitude=" + lat + "&longitude=" + lon + "&current=temperature_2m&timezone=auto";
+    var FALLBACK_WEATHER_CITY = "Mons";
+    var FALLBACK_WEATHER_LAT = 50.4542;
+    var FALLBACK_WEATHER_LON = 3.9523;
+
+    function _weatherIconFromCode(code) {
+      // Codes meteo Open-Meteo: https://open-meteo.com/en/docs
+      if (typeof code !== "number") return "\u2601\ufe0f";
+      if (code === 0) return "\u2600\ufe0f"; // ciel degage
+      if (code === 1 || code === 2) return "\ud83c\udf24\ufe0f"; // peu nuageux
+      if (code === 3) return "\u2601\ufe0f"; // couvert
+      if (code === 45 || code === 48) return "\ud83c\udf2b\ufe0f"; // brouillard
+      if (code === 51 || code === 53 || code === 55 || code === 56 || code === 57) return "\ud83c\udf26\ufe0f"; // bruine
+      if (code === 61 || code === 63 || code === 65 || code === 66 || code === 67 || code === 80 || code === 81 || code === 82) return "\ud83c\udf27\ufe0f"; // pluie
+      if (code === 71 || code === 73 || code === 75 || code === 77 || code === 85 || code === 86) return "\ud83c\udf28\ufe0f"; // neige
+      if (code === 95 || code === 96 || code === 99) return "\u26c8\ufe0f"; // orage
+      return "\u2601\ufe0f";
+    }
+
+    function fetchWeatherFor(lat, lon, sourceName, onSuccess, onError) {
+      var url = "https://api.open-meteo.com/v1/forecast?latitude=" + lat + "&longitude=" + lon + "&current=temperature_2m,weather_code&timezone=auto";
       _jsonGet(url, function(data) {
         if (!data.current || typeof data.current.temperature_2m !== "number") {
           onError(new Error("meteo"));
           return;
         }
-        if (weatherLabel) weatherLabel.textContent = Math.round(data.current.temperature_2m) + "\u00b0C";
+        var weatherCode = typeof data.current.weather_code === "number" ? data.current.weather_code : null;
+        var weatherIcon = _weatherIconFromCode(weatherCode);
+        if (weatherLabel) {
+          weatherLabel.textContent = weatherIcon + " " + Math.round(data.current.temperature_2m) + "\u00b0C";
+          if (sourceName) weatherLabel.title = sourceName;
+        }
         onSuccess();
       }, onError);
     }
 
     function updateWeather() {
       if (!("geolocation" in navigator)) {
-        fetchWeatherFor(3.8480, 11.5021, function() {}, function() {
+        fetchWeatherFor(FALLBACK_WEATHER_LAT, FALLBACK_WEATHER_LON, FALLBACK_WEATHER_CITY, function() {}, function() {
           if (weatherLabel) weatherLabel.textContent = "Meteo indisponible";
         });
         return;
       }
       try {
         navigator.geolocation.getCurrentPosition(function(pos) {
-          fetchWeatherFor(pos.coords.latitude, pos.coords.longitude, function() {}, function() {
+          fetchWeatherFor(pos.coords.latitude, pos.coords.longitude, "Position actuelle", function() {}, function() {
             if (weatherLabel) weatherLabel.textContent = "Meteo indisponible";
           });
         }, function() {
-          fetchWeatherFor(3.8480, 11.5021, function() {}, function() {
+          fetchWeatherFor(FALLBACK_WEATHER_LAT, FALLBACK_WEATHER_LON, FALLBACK_WEATHER_CITY, function() {}, function() {
             if (weatherLabel) weatherLabel.textContent = "Meteo indisponible";
           });
         }, { timeout: 7000, maximumAge: 600000 });
       } catch (e) {
-        fetchWeatherFor(3.8480, 11.5021, function() {}, function() {
+        fetchWeatherFor(FALLBACK_WEATHER_LAT, FALLBACK_WEATHER_LON, FALLBACK_WEATHER_CITY, function() {}, function() {
           if (weatherLabel) weatherLabel.textContent = "Meteo indisponible";
         });
       }
@@ -1005,7 +1027,6 @@ def create_app() -> Flask:
 
     def _is_reliable_face_result(face_result: dict, frame_w: int, frame_h: int) -> bool:
         primary = face_result.get("primary_face") or {}
-        guard = face_result.get("guard") or {}
 
         w = int(primary.get("w", 0))
         h = int(primary.get("h", 0))
@@ -1015,11 +1036,8 @@ def create_app() -> Flask:
         if w < 72 or h < 72:
             return False
 
-        if int(guard.get("centered_candidates", 0)) <= 0:
-            return False
-
-        margin_x = max(2, int(frame_w * 0.02))
-        margin_y = max(2, int(frame_h * 0.02))
+        margin_x = max(2, int(frame_w * 0.01))
+        margin_y = max(2, int(frame_h * 0.01))
         if x <= margin_x or y <= margin_y or (x + w) >= (frame_w - margin_x) or (y + h) >= (frame_h - margin_y):
             return False
 
@@ -1031,17 +1049,9 @@ def create_app() -> Flask:
         if not _point_in_oval(face_cx, face_cy, cx, cy, rx, ry):
             return False
 
-        # Le rectangle visage doit rester dans la boîte englobante de l'ovale.
-        oval_left = cx - rx
-        oval_right = cx + rx
-        oval_top = cy - ry
-        oval_bottom = cy + ry
-        if x < oval_left or y < oval_top or (x + w) > oval_right or (y + h) > oval_bottom:
-          return False
-
         return True
 
-    def _capture_with_face(max_attempts: int = 6, delay_ms: int = 70) -> dict:
+    def _capture_with_face(max_attempts: int = 8, delay_ms: int = 70) -> dict:
         last_capture: dict | None = None
         last_face: dict | None = None
         pending_bbox: dict | None = None
@@ -1069,7 +1079,7 @@ def create_app() -> Flask:
                             last_face = face_result
                         else:
                             iou = _bbox_iou(pending_bbox, current_bbox)
-                            if iou >= 0.18:
+                            if iou >= 0.10:
                                 return {
                                     "ok": True,
                                     "frame": frame,
