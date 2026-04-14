@@ -566,7 +566,7 @@ _UI_HTML = """\
       try {
         var now = new Date();
         if (clockTime) {
-          clockTime.textContent = _fmtDateEuroLong(now) + "\n" + _fmtTime(now);
+          clockTime.textContent = _fmtDateEuroLong(now) + "\\n" + _fmtTime(now);
         }
       } catch(e) {}
     }
