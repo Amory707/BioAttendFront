@@ -19,6 +19,12 @@ def _to_int(value: str | None, default: int) -> int:
     return int(value)
 
 
+def _to_float(value: str | None, default: float) -> float:
+    if value is None or value == "":
+        return default
+    return float(value)
+
+
 def _normalize_trigger_mode(value: str | None) -> str:
     raw = (value or "space").strip().lower()
     aliases = {
@@ -26,6 +32,9 @@ def _normalize_trigger_mode(value: str | None) -> str:
         "keyboard": "space",
         "clavier": "space",
         "pir": "pir",
+        "ultrason": "ultrason",
+        "ultrasonic": "ultrason",
+        "hc-sr04": "ultrason",
     }
     return aliases.get(raw, "space")
 
@@ -65,6 +74,9 @@ class Settings:
     api_timeout_seconds: int
     pointage_trigger_mode: str
     gpio_pir: int
+    gpio_ultrason_trigger: int
+    gpio_ultrason_echo: int
+    ultrason_distance_cm: float
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -101,6 +113,9 @@ class Settings:
             api_timeout_seconds=_to_int(os.getenv("API_TIMEOUT_SECONDS"), default=8),
             pointage_trigger_mode=_normalize_trigger_mode(os.getenv("POINTAGE_TRIGGER_MODE")),
             gpio_pir=_to_int(os.getenv("GPIO_PIR"), default=17),
+            gpio_ultrason_trigger=_to_int(os.getenv("GPIO_ULTRASON_TRIGGER"), default=18),
+            gpio_ultrason_echo=_to_int(os.getenv("GPIO_ULTRASON_ECHO"), default=24),
+            ultrason_distance_cm=max(2.0, _to_float(os.getenv("ULTRASON_DISTANCE_CM"), default=80.0)),
         )
 
     def as_public_dict(self) -> dict[str, object]:

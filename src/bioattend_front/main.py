@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import statistics
 import time
 import cv2
 from pathlib import Path
@@ -458,7 +459,9 @@ _UI_HTML = """\
     var KIOSK_MODE = "__KIOSK_MODE__" === "true";
     var CAMERA_MIRROR = "__CAMERA_MIRROR__" === "true";
     var POINTAGE_TRIGGER_MODE = "__POINTAGE_TRIGGER_MODE__";
+    var ULTRASON_DISTANCE_CM = parseFloat("__ULTRASON_DISTANCE_CM__") || 80;
     var MANUAL_TRIGGER_ENABLED = POINTAGE_TRIGGER_MODE === "space";
+    var AUTO_TRIGGER_ENABLED = !MANUAL_TRIGGER_ENABLED;
 
     function getQueryParam(name) {
       var search = window.location.search || "";
@@ -497,6 +500,10 @@ _UI_HTML = """\
       if (!stdFooter) return;
       if (MANUAL_TRIGGER_ENABLED) {
         stdFooter.innerHTML = "Appuyez sur Espace pour lancer la capture";
+        return;
+      }
+      if (POINTAGE_TRIGGER_MODE === "ultrason") {
+        stdFooter.textContent = "Mode ultrason actif: declenchement automatique sous " + Math.round(ULTRASON_DISTANCE_CM) + " cm";
         return;
       }
       stdFooter.textContent = "Mode PIR actif: declenchement automatique sur detection de presence";
@@ -753,36 +760,36 @@ _UI_HTML = """\
 
     if (CAMERA_MIRROR) feed.style.transform = "scaleX(-1)";
 
-    // ── Polling PIR ──────────────────────────────────────────────────────────
-    if (!MANUAL_TRIGGER_ENABLED) {
-      var _pirLastDetected = false;
-      var _pirCooldownUntil = 0;
-      var PIR_POLL_INTERVAL_MS = 400;
-      var PIR_COOLDOWN_MS = 8000;
+    // ── Polling capteur de presence (PIR / ultrason) ───────────────────────
+    if (AUTO_TRIGGER_ENABLED) {
+      var _presenceLastDetected = false;
+      var _presenceCooldownUntil = 0;
+      var PRESENCE_POLL_INTERVAL_MS = 400;
+      var PRESENCE_COOLDOWN_MS = 8000;
 
-      function _pirPoll() {
+      function _presencePoll() {
         if (recognitionInProgress) return;
         var now = Date.now();
-        if (now < _pirCooldownUntil) return;
+        if (now < _presenceCooldownUntil) return;
         var xhr = new XMLHttpRequest();
-        xhr.open("GET", "/pir/status", true);
+        xhr.open("GET", "/presence/status", true);
         xhr.timeout = 350;
         xhr.onload = function() {
           if (xhr.status !== 200) return;
           try {
             var data = JSON.parse(xhr.responseText);
             var detected = data.ok && data.detected;
-            if (detected && !_pirLastDetected && !recognitionInProgress && Date.now() >= _pirCooldownUntil) {
-              _pirCooldownUntil = Date.now() + PIR_COOLDOWN_MS;
+            if (detected && !_presenceLastDetected && !recognitionInProgress && Date.now() >= _presenceCooldownUntil) {
+              _presenceCooldownUntil = Date.now() + PRESENCE_COOLDOWN_MS;
               startCaptureFlow();
             }
-            _pirLastDetected = detected;
+            _presenceLastDetected = detected;
           } catch(e) {}
         };
         xhr.send();
       }
 
-      setInterval(_pirPoll, PIR_POLL_INTERVAL_MS);
+      setInterval(_presencePoll, PRESENCE_POLL_INTERVAL_MS);
     }
     // ─────────────────────────────────────────────────────────────────────────
 
@@ -802,19 +809,89 @@ def create_app() -> Flask:
     app.config["BIOATTEND_SETTINGS"] = settings
     platform_event_types = {"recognition_failed", "unknown_user", "spoof_attempt"}
 
-    # ── Initialisation GPIO PIR ──────────────────────────────────────────────
+    # ── Initialisation GPIO capteurs de présence ─────────────────────────────
     _gpio_module = None
     _gpio_pir_available = False
-    if settings.pointage_trigger_mode == "pir":
+    _gpio_ultrason_available = False
+    if settings.pointage_trigger_mode in {"pir", "ultrason"}:
         try:
             import RPi.GPIO as _gpio  # type: ignore[import]
             _gpio.setmode(_gpio.BCM)
-            _gpio.setup(settings.gpio_pir, _gpio.IN)
             _gpio_module = _gpio
-            _gpio_pir_available = True
+            if settings.pointage_trigger_mode == "pir":
+                _gpio.setup(settings.gpio_pir, _gpio.IN)
+                _gpio_pir_available = True
+            elif settings.pointage_trigger_mode == "ultrason":
+                _gpio.setup(settings.gpio_ultrason_trigger, _gpio.OUT)
+                _gpio.setup(settings.gpio_ultrason_echo, _gpio.IN)
+                _gpio.output(settings.gpio_ultrason_trigger, False)
+                time.sleep(0.05)
+                _gpio_ultrason_available = True
         except Exception:
             pass
     # ────────────────────────────────────────────────────────────────────────
+
+    def _read_ultrason_distance_cm(timeout_s: float = 0.03) -> float | None:
+        if not _gpio_ultrason_available or _gpio_module is None:
+            return None
+
+        trigger_pin = settings.gpio_ultrason_trigger
+        echo_pin = settings.gpio_ultrason_echo
+
+        try:
+            _gpio_module.output(trigger_pin, False)
+            time.sleep(0.000002)
+            _gpio_module.output(trigger_pin, True)
+            time.sleep(0.00001)
+            _gpio_module.output(trigger_pin, False)
+
+            wait_start = time.perf_counter()
+            pulse_start = wait_start
+            while _gpio_module.input(echo_pin) == 0:
+                pulse_start = time.perf_counter()
+                if (pulse_start - wait_start) > timeout_s:
+                    return None
+
+            pulse_end = pulse_start
+            while _gpio_module.input(echo_pin) == 1:
+                pulse_end = time.perf_counter()
+                if (pulse_end - pulse_start) > timeout_s:
+                    return None
+
+            duration_s = pulse_end - pulse_start
+            distance_cm = (duration_s * 34300.0) / 2.0
+            if distance_cm <= 0.0 or distance_cm > 600.0:
+                return None
+            return float(distance_cm)
+        except Exception:
+            return None
+
+    def _ultrason_status_payload() -> tuple[dict[str, object], int]:
+        if settings.pointage_trigger_mode != "ultrason":
+            return {"ok": False, "reason": "mode_not_ultrason"}, 400
+        if not _gpio_ultrason_available:
+            return {"ok": False, "reason": "gpio_unavailable"}, 503
+
+        samples: list[float] = []
+        for _ in range(3):
+            measure = _read_ultrason_distance_cm()
+            if measure is not None:
+                samples.append(measure)
+            time.sleep(0.01)
+
+        if not samples:
+            return {"ok": False, "reason": "no_signal"}, 503
+
+        distance_cm = round(float(statistics.median(samples)), 1)
+        threshold_cm = float(settings.ultrason_distance_cm)
+        detected = distance_cm <= threshold_cm
+        return {
+            "ok": True,
+            "detected": detected,
+            "distance_cm": distance_cm,
+            "threshold_cm": threshold_cm,
+            "mode": "ultrason",
+        }, 200
 
     def _bbox_iou(a: dict, b: dict) -> float:
         ax1, ay1 = int(a.get("x", 0)), int(a.get("y", 0))
@@ -983,6 +1060,28 @@ def create_app() -> Flask:
         except Exception as exc:
             return jsonify({"ok": False, "reason": str(exc)}), 500
 
+    @app.get("/ultrason/status")
+    def ultrason_status() -> tuple[object, int]:
+        payload, status = _ultrason_status_payload()
+        return jsonify(payload), status
+
+    @app.get("/presence/status")
+    def presence_status() -> tuple[object, int]:
+        if settings.pointage_trigger_mode == "pir":
+            if not _gpio_pir_available or _gpio_module is None:
+                return jsonify({"ok": False, "reason": "gpio_unavailable"}), 503
+            try:
+                detected = bool(_gpio_module.input(settings.gpio_pir))
+                return jsonify({"ok": True, "detected": detected, "mode": "pir"}), 200
+            except Exception as exc:
+                return jsonify({"ok": False, "reason": str(exc)}), 500
+
+        if settings.pointage_trigger_mode == "ultrason":
+            payload, status = _ultrason_status_payload()
+            return jsonify(payload), status
+
+        return jsonify({"ok": False, "reason": "mode_not_sensor"}), 400
+
     @app.get("/diagnostics/config")
     def diagnostics_config() -> tuple[object, int]:
         return jsonify({"ok": True, "config": settings.as_public_dict()}), 200
@@ -1092,6 +1191,7 @@ def create_app() -> Flask:
         html = html.replace("__KIOSK_MODE__", "true" if settings.kiosk_mode else "false")
         html = html.replace("__CAMERA_MIRROR__", "true" if settings.camera_mirror else "false")
         html = html.replace("__POINTAGE_TRIGGER_MODE__", settings.pointage_trigger_mode)
+        html = html.replace("__ULTRASON_DISTANCE_CM__", str(settings.ultrason_distance_cm))
         return html, 200, {"Content-Type": "text/html; charset=utf-8"}
 
     @app.get("/assets/logo-projet")

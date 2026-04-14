@@ -82,7 +82,11 @@ Créer un fichier `.env` à la racine du projet. Ce fichier **ne doit jamais êt
 # ── Mode debug Flask ──────────────────────────────────────────────
 DEBUG=false
 KIOSK_MODE=true          # Active l'UI borne plein écran
-POINTAGE_TRIGGER_MODE=space   # "space" (clavier/touch) ou "pir" (declenchement capteur presence)
+POINTAGE_TRIGGER_MODE=space   # "space" (clavier/touch), "pir" ou "ultrason"
+GPIO_PIR=17
+GPIO_ULTRASON_TRIGGER=18
+GPIO_ULTRASON_ECHO=24
+ULTRASON_DISTANCE_CM=80       # Declenchement auto si distance mesuree <= ce seuil
 
 # ── Caméra ───────────────────────────────────────────────────────
 CAMERA_WIDTH=1280
@@ -129,7 +133,10 @@ LIVENESS_LIVE_CLASS_IDX=0
 | `DEVICE_NAME` | Nom logique de la pointeuse | `bioattend-pi` ou un identifiant unique |
 | `DEBUG` | Active le mode debug Flask | `false` en production |
 | `KIOSK_MODE` | Active le comportement borne (plein écran auto) | `true` sur Raspberry Pi |
-| `POINTAGE_TRIGGER_MODE` | Source de déclenchement du pointage | `space` ou `pir` |
+| `POINTAGE_TRIGGER_MODE` | Source de déclenchement du pointage | `space`, `pir` ou `ultrason` |
+| `GPIO_ULTRASON_TRIGGER` | GPIO BCM du pin Trigger du capteur ultrason | `18` |
+| `GPIO_ULTRASON_ECHO` | GPIO BCM du pin Echo du capteur ultrason | `24` |
+| `ULTRASON_DISTANCE_CM` | Seuil distance (en cm) pour déclenchement auto | `80` |
 
 ---
 
