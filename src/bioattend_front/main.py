@@ -63,8 +63,8 @@ _UI_HTML = """\
       height: 100%;
       object-fit: cover;
       object-position: center;
-      opacity: 0.30;
-      filter: saturate(1.05) brightness(0.6);
+      opacity: 0.18;
+      filter: saturate(1.03) brightness(0.82);
     }
 
     /* Vignette douce : assombrit seulement les bords haut/bas */
@@ -74,12 +74,12 @@ _UI_HTML = """\
       inset: 0;
       pointer-events: none;
       background:
-        radial-gradient(ellipse 90% 70% at 50% 50%, rgba(5,12,22,0.4) 0%, transparent 70%),
+        radial-gradient(ellipse 90% 70% at 50% 50%, rgba(5,12,22,0.18) 0%, transparent 70%),
         linear-gradient(to bottom,
-          rgba(4,10,18,0.78) 0%,
+          rgba(4,10,18,0.34) 0%,
           rgba(4,10,18,0.0) 16%,
           rgba(4,10,18,0.0) 80%,
-          rgba(4,10,18,0.82) 100%);
+          rgba(4,10,18,0.42) 100%);
     }
 
     /* ── Vues ── */
@@ -482,6 +482,7 @@ _UI_HTML = """\
     var CAMERA_MIRROR = "__CAMERA_MIRROR__" === "true";
     var POINTAGE_TRIGGER_MODE = "__POINTAGE_TRIGGER_MODE__";
     var ULTRASON_DISTANCE_CM = parseFloat("__ULTRASON_DISTANCE_CM__") || 80;
+    var ULTRASON_CAPTURE_PREP_DELAY_MS = parseInt("__ULTRASON_CAPTURE_PREP_DELAY_MS__", 10);
     var MANUAL_TRIGGER_ENABLED = POINTAGE_TRIGGER_MODE === "space";
     var AUTO_TRIGGER_ENABLED = !MANUAL_TRIGGER_ENABLED;
 
@@ -506,6 +507,9 @@ _UI_HTML = """\
     var recognitionInProgress = false;
     var resultTimer = null;
     var CAPTURE_PREP_DELAY_MS = 1800;
+    if (POINTAGE_TRIGGER_MODE === "ultrason" && !isNaN(ULTRASON_CAPTURE_PREP_DELAY_MS) && ULTRASON_CAPTURE_PREP_DELAY_MS >= 0) {
+      CAPTURE_PREP_DELAY_MS = ULTRASON_CAPTURE_PREP_DELAY_MS;
+    }
 
     function setMode(mode) {
       viewStandard.classList.toggle("active", mode === "standard");
@@ -1243,6 +1247,7 @@ def create_app() -> Flask:
         html = html.replace("__CAMERA_MIRROR__", "true" if settings.camera_mirror else "false")
         html = html.replace("__POINTAGE_TRIGGER_MODE__", settings.pointage_trigger_mode)
         html = html.replace("__ULTRASON_DISTANCE_CM__", str(settings.ultrason_distance_cm))
+        html = html.replace("__ULTRASON_CAPTURE_PREP_DELAY_MS__", str(settings.ultrason_capture_prep_delay_ms))
         return html, 200, {"Content-Type": "text/html; charset=utf-8"}
 
     @app.get("/assets/logo-projet")
@@ -1342,7 +1347,9 @@ def create_app() -> Flask:
     def snapshot() -> object:
         capture_result = capture_frame_fast(settings)
         if not capture_result["ok"]:
-            return ("", 503)
+            capture_result = capture_frame(settings)
+            if not capture_result.get("ok", False):
+                return jsonify(capture_result), 503
         frame = capture_result["frame"]
 
         show_boxes = request.args.get("boxes", "0") == "1"

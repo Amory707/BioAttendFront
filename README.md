@@ -83,6 +83,7 @@ Créer un fichier `.env` à la racine du projet. Ce fichier **ne doit jamais êt
 DEBUG=false
 KIOSK_MODE=true          # Active l'UI borne plein écran
 POINTAGE_TRIGGER_MODE=space   # "space" (clavier/touch), "pir" ou "ultrason"
+ULTRASON_CAPTURE_PREP_DELAY_MS=2600  # Delai pour se placer avant capture quand mode ultrason
 GPIO_PIR=17
 GPIO_ULTRASON_TRIGGER=18
 GPIO_ULTRASON_ECHO=24
@@ -136,6 +137,7 @@ LIVENESS_LIVE_CLASS_IDX=0
 | `DEBUG` | Active le mode debug Flask | `false` en production |
 | `KIOSK_MODE` | Active le comportement borne (plein écran auto) | `true` sur Raspberry Pi |
 | `POINTAGE_TRIGGER_MODE` | Source de déclenchement du pointage | `space`, `pir` ou `ultrason` |
+| `ULTRASON_CAPTURE_PREP_DELAY_MS` | Délai avant capture quand le déclenchement vient de l'ultrason | `2200-3200` selon l'usage |
 | `GPIO_ULTRASON_TRIGGER` | GPIO BCM du pin Trigger du capteur ultrason | `18` |
 | `GPIO_ULTRASON_ECHO` | GPIO BCM du pin Echo du capteur ultrason | `24` |
 | `ULTRASON_DISTANCE_CM` | Seuil distance (en cm) pour déclenchement auto | `80` |

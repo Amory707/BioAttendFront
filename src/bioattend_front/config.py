@@ -74,6 +74,7 @@ class Settings:
     api_token: str
     api_timeout_seconds: int
     pointage_trigger_mode: str
+    ultrason_capture_prep_delay_ms: int
     gpio_pir: int
     gpio_ultrason_trigger: int
     gpio_ultrason_echo: int
@@ -114,6 +115,10 @@ class Settings:
             api_token=os.getenv("API_TOKEN", "").strip(),
             api_timeout_seconds=_to_int(os.getenv("API_TIMEOUT_SECONDS"), default=8),
             pointage_trigger_mode=_normalize_trigger_mode(os.getenv("POINTAGE_TRIGGER_MODE")),
+            ultrason_capture_prep_delay_ms=max(
+                0,
+                _to_int(os.getenv("ULTRASON_CAPTURE_PREP_DELAY_MS"), default=2600),
+            ),
             gpio_pir=_to_int(os.getenv("GPIO_PIR"), default=17),
             gpio_ultrason_trigger=_to_int(os.getenv("GPIO_ULTRASON_TRIGGER"), default=18),
             gpio_ultrason_echo=_to_int(os.getenv("GPIO_ULTRASON_ECHO"), default=24),

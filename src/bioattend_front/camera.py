@@ -73,10 +73,16 @@ def capture_frame_fast(settings: Settings) -> dict[str, Any]:
         cam = _get_persistent_picamera2(settings)
         frame = cam.capture_array()
         if frame is None or getattr(frame, "size", 0) == 0:
-            return {"ok": False, "error": "Frame vide"}
+            fallback = capture_frame(settings)
+            if fallback.get("ok", False):
+                return fallback
+            return {"ok": False, "error": "Frame vide", "fallback": fallback}
         return {"ok": True, "frame": _normalize_frame(frame, "picamera2", settings)}
     except Exception as exc:
-        return {"ok": False, "error": str(exc)}
+        fallback = capture_frame(settings)
+        if fallback.get("ok", False):
+            return fallback
+        return {"ok": False, "error": str(exc), "fallback": fallback}
 
 
 def _resolve_device(camera_device: str) -> int | str:
@@ -100,8 +106,10 @@ def _resolve_backends(backend_name: str) -> list[tuple[str, int]]:
 
 
 def _resolve_sources(settings: Settings) -> list[str]:
-    if settings.camera_source in {"opencv", "picamera2"}:
-        return [settings.camera_source]
+    if settings.camera_source == "picamera2":
+        return ["picamera2", "opencv"]
+    if settings.camera_source == "opencv":
+        return ["opencv", "picamera2"]
 
     machine = platform.machine().lower()
     if machine.startswith("arm") or machine == "aarch64":
@@ -146,69 +154,84 @@ def _probe_camera_picamera2(settings: Settings) -> dict[str, Any]:
         attempt["error"] = f"Picamera2 unavailable: {exc}"
         return {"ok": False, "attempt": attempt}
 
-    camera = None
-    try:
-        started_at = time.monotonic()
-        camera = Picamera2()
-        configuration = camera.create_preview_configuration(
-            main={
-                "size": (capture_w, capture_h),
-                "format": _picamera_frame_format(),
-            }
-        )
-        camera.configure(configuration)
-        camera.start()
-        attempt["opened"] = True
-        attempt["duration_ms"] = round((time.monotonic() - started_at) * 1000, 2)
+    last_error: str | None = None
+    init_tries = 2
 
-        if settings.camera_warmup_ms > 0:
-            time.sleep(settings.camera_warmup_ms / 1000)
-
-        read_attempts: list[dict[str, Any]] = []
-        for attempt_index in range(settings.camera_read_attempts):
-            read_started_at = time.monotonic()
-            frame = camera.capture_array()
-            read_ok = frame is not None and getattr(frame, "size", 0) > 0
-            read_attempts.append(
-                {
-                    "index": attempt_index + 1,
-                    "read_ok": read_ok,
-                    "duration_ms": round((time.monotonic() - read_started_at) * 1000, 2),
+    for init_try in range(1, init_tries + 1):
+        camera = None
+        try:
+            started_at = time.monotonic()
+            camera = Picamera2()
+            configuration = camera.create_preview_configuration(
+                main={
+                    "size": (capture_w, capture_h),
+                    "format": _picamera_frame_format(),
                 }
             )
-            if read_ok:
-                height, width = frame.shape[:2]
-                attempt["read_ok"] = True
-                attempt["read_attempts"] = read_attempts
-                attempt["frame_shape"] = [int(height), int(width)]
-                attempt["pixel_format_channels"] = int(frame.shape[2]) if len(frame.shape) == 3 else 1
-                return {
-                    "ok": True,
-                    "camera": attempt,
-                    "frame": _normalize_frame(frame, "picamera2", settings),
-                    "platform": platform.platform(),
-                    "note": "Camera opened and a frame was captured in memory.",
-                }
-            time.sleep(0.1)
+            camera.configure(configuration)
+            camera.start()
+            attempt["opened"] = True
+            attempt["duration_ms"] = round((time.monotonic() - started_at) * 1000, 2)
+            attempt["init_try"] = init_try
 
-        attempt["read_ok"] = False
-        attempt["read_attempts"] = read_attempts
-        attempt["error"] = "Picamera2 started but no frame could be captured after repeated attempts."
-        return {"ok": False, "attempt": attempt}
-    except Exception as exc:
-        attempt["read_ok"] = False
-        attempt["error"] = f"Picamera2 capture failed: {exc}"
-        return {"ok": False, "attempt": attempt}
-    finally:
-        if camera is not None:
-            try:
-                camera.stop()
-            except Exception:
-                pass
-            try:
-                camera.close()
-            except Exception:
-                pass
+            if settings.camera_warmup_ms > 0:
+                time.sleep(settings.camera_warmup_ms / 1000)
+
+            read_attempts: list[dict[str, Any]] = []
+            for attempt_index in range(settings.camera_read_attempts):
+                read_started_at = time.monotonic()
+                frame = camera.capture_array()
+                read_ok = frame is not None and getattr(frame, "size", 0) > 0
+                read_attempts.append(
+                    {
+                        "index": attempt_index + 1,
+                        "read_ok": read_ok,
+                        "duration_ms": round((time.monotonic() - read_started_at) * 1000, 2),
+                    }
+                )
+                if read_ok:
+                    height, width = frame.shape[:2]
+                    attempt["read_ok"] = True
+                    attempt["read_attempts"] = read_attempts
+                    attempt["frame_shape"] = [int(height), int(width)]
+                    attempt["pixel_format_channels"] = int(frame.shape[2]) if len(frame.shape) == 3 else 1
+                    return {
+                        "ok": True,
+                        "camera": attempt,
+                        "frame": _normalize_frame(frame, "picamera2", settings),
+                        "platform": platform.platform(),
+                        "note": "Camera opened and a frame was captured in memory.",
+                    }
+                time.sleep(0.1)
+
+            attempt["read_ok"] = False
+            attempt["read_attempts"] = read_attempts
+            attempt["error"] = "Picamera2 started but no frame could be captured after repeated attempts."
+            return {"ok": False, "attempt": attempt}
+        except Exception as exc:
+            last_error = str(exc)
+            attempt["opened"] = False
+            attempt["read_ok"] = False
+            attempt["init_try"] = init_try
+            if init_try < init_tries:
+                time.sleep(0.25)
+                continue
+            attempt["error"] = f"Picamera2 capture failed: {exc}"
+            return {"ok": False, "attempt": attempt}
+        finally:
+            if camera is not None:
+                try:
+                    camera.stop()
+                except Exception:
+                    pass
+                try:
+                    camera.close()
+                except Exception:
+                    pass
+
+    attempt["read_ok"] = False
+    attempt["error"] = f"Picamera2 capture failed: {last_error or 'unknown error'}"
+    return {"ok": False, "attempt": attempt}
 
 
 def _probe_camera_opencv(settings: Settings) -> dict[str, Any]:
