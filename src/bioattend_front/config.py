@@ -79,6 +79,7 @@ class Settings:
     ultrason_distance_cm: float
     scan_oval_aspect_ratio: float
     scan_oval_center_y_pct: float
+    scan_oval_height_pct: float
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -120,6 +121,7 @@ class Settings:
             ultrason_distance_cm=max(2.0, _to_float(os.getenv("ULTRASON_DISTANCE_CM"), default=80.0)),
             scan_oval_aspect_ratio=max(0.3, _to_float(os.getenv("SCAN_OVAL_ASPECT_RATIO"), default=0.76)),
             scan_oval_center_y_pct=max(10.0, min(90.0, _to_float(os.getenv("SCAN_OVAL_CENTER_Y_PCT"), default=47.0))),
+            scan_oval_height_pct=max(20.0, min(95.0, _to_float(os.getenv("SCAN_OVAL_HEIGHT_PCT"), default=76.0))),
         )
 
     def as_public_dict(self) -> dict[str, object]:

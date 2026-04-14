@@ -210,7 +210,9 @@ _UI_HTML = """\
       position: absolute;
       left: 50%;
       top: __SCAN_OVAL_CENTER_Y_PCT__%;
-      width: clamp(240px, 33vw, 420px);
+      height: clamp(260px, calc(__SCAN_OVAL_HEIGHT_PCT__ * 1vh), 92vh);
+      width: auto;
+      max-width: 92vw;
       aspect-ratio: __SCAN_OVAL_ASPECT_RATIO__;
       transform: translate(-50%, -50%);
       border-radius: 50%;
@@ -235,7 +237,7 @@ _UI_HTML = """\
       position: absolute;
       left: 50%;
       top: var(--scan-cy, 50%);
-      width: clamp(200px, 27vw, 340px);
+      width: var(--scan-line-w, clamp(200px, 27vw, 340px));
       height: 2px;
       background: linear-gradient(90deg, transparent, rgba(61, 232, 154, 0.95), transparent);
       filter: drop-shadow(0 0 7px rgba(61, 232, 154, 0.8));
@@ -808,8 +810,10 @@ _UI_HTML = """\
         var or_ = scanOval.getBoundingClientRect();
         var cy = (or_.top - wr.top) + or_.height * 0.5;
         var amp = Math.round(or_.height * 0.35);
+        var scanLineW = Math.max(140, Math.round(or_.width * 0.82));
         document.documentElement.style.setProperty("--scan-cy", cy + "px");
         document.documentElement.style.setProperty("--scan-amp", amp + "px");
+        document.documentElement.style.setProperty("--scan-line-w", scanLineW + "px");
       } catch (e) {}
     }
     _alignScanLine();
@@ -954,8 +958,14 @@ def create_app() -> Flask:
 
     def _scan_oval_geometry(frame_w: int, frame_h: int) -> tuple[float, float, float, float]:
         # Aligne la zone d'acceptation backend sur l'ovale affiché dans l'UI.
-        # Les paramètres sont pilotés par SCAN_OVAL_ASPECT_RATIO et SCAN_OVAL_CENTER_Y_PCT.
-        oval_w = max(240.0, min(float(frame_w) * 0.33, 420.0))
+      # Les paramètres sont pilotés par SCAN_OVAL_ASPECT_RATIO,
+      # SCAN_OVAL_CENTER_Y_PCT et SCAN_OVAL_HEIGHT_PCT.
+      oval_h = float(frame_h) * (settings.scan_oval_height_pct / 100.0)
+      oval_h = max(120.0, min(oval_h, float(frame_h) * 0.92))
+      oval_w = oval_h * settings.scan_oval_aspect_ratio
+      max_w = float(frame_w) * 0.92
+      if oval_w > max_w:
+        oval_w = max_w
         oval_h = oval_w / settings.scan_oval_aspect_ratio
         cx = float(frame_w) * 0.5
         cy = float(frame_h) * (settings.scan_oval_center_y_pct / 100.0)
@@ -1216,6 +1226,7 @@ def create_app() -> Flask:
         html = html.replace("__ULTRASON_DISTANCE_CM__", str(settings.ultrason_distance_cm))
         html = html.replace("__SCAN_OVAL_ASPECT_RATIO__", str(settings.scan_oval_aspect_ratio))
         html = html.replace("__SCAN_OVAL_CENTER_Y_PCT__", str(round(settings.scan_oval_center_y_pct, 1)))
+        html = html.replace("__SCAN_OVAL_HEIGHT_PCT__", str(round(settings.scan_oval_height_pct, 1)))
         return html, 200, {"Content-Type": "text/html; charset=utf-8"}
 
     @app.get("/assets/logo-projet")
