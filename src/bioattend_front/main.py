@@ -976,6 +976,95 @@ def create_app() -> Flask:
         )
         return normalized_type, event_result
 
+    def _coerce_bool(value: object) -> bool | None:
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, (int, float)):
+            return bool(value)
+        if isinstance(value, str):
+            lowered = value.strip().lower()
+            if lowered in {"1", "true", "yes", "ok", "matched", "recognized"}:
+                return True
+            if lowered in {"0", "false", "no", "ko", "unmatched", "unknown"}:
+                return False
+        return None
+
+    def _normalize_pointage_type(value: object) -> str:
+        if not isinstance(value, str):
+            return "ENTREE"
+        normalized = value.strip().upper()
+        if normalized in {"ENTREE", "ENTRY", "IN", "CHECKIN", "CHECK_IN"}:
+            return "ENTREE"
+        if normalized in {"SORTIE", "EXIT", "OUT", "CHECKOUT", "CHECK_OUT"}:
+            return "SORTIE"
+        return "ENTREE"
+
+    def _extract_identity_fields(api_response: dict) -> tuple[str | None, str | None, object | None]:
+        full_name = api_response.get("full_name") or api_response.get("name")
+        pointage_type = api_response.get("pointage_type") or api_response.get("type")
+        pointage_id = api_response.get("pointage_id") or api_response.get("id")
+
+        nested_candidates = [
+            api_response.get("user"),
+            api_response.get("employee"),
+            api_response.get("person"),
+            api_response.get("data"),
+            api_response.get("result"),
+        ]
+
+        for nested in nested_candidates:
+            if not isinstance(nested, dict):
+                continue
+            full_name = full_name or nested.get("full_name") or nested.get("name")
+            pointage_type = pointage_type or nested.get("pointage_type") or nested.get("type")
+            pointage_id = pointage_id or nested.get("pointage_id") or nested.get("id")
+
+        return (
+            str(full_name).strip() if full_name else None,
+            str(pointage_type).strip() if pointage_type else None,
+            pointage_id,
+        )
+
+    def _extract_match_flag(api_response: dict) -> bool | None:
+        direct_keys = ["matched", "is_match", "is_matched", "recognized", "is_recognized"]
+        for key in direct_keys:
+            if key in api_response:
+                parsed = _coerce_bool(api_response.get(key))
+                if parsed is not None:
+                    return parsed
+
+        for parent_key in ["data", "result"]:
+            nested = api_response.get(parent_key)
+            if not isinstance(nested, dict):
+                continue
+            for key in direct_keys:
+                if key in nested:
+                    parsed = _coerce_bool(nested.get(key))
+                    if parsed is not None:
+                        return parsed
+        return None
+
+    def _is_successful_identification(api_result: dict) -> tuple[bool, str | None, str | None, object | None]:
+        api_response = api_result.get("response")
+        if not isinstance(api_response, dict):
+            api_response = {}
+
+        full_name, pointage_type, pointage_id = _extract_identity_fields(api_response)
+        matched = _extract_match_flag(api_response)
+
+        if matched is True:
+            return True, full_name, pointage_type, pointage_id
+        if matched is False:
+            return False, full_name, pointage_type, pointage_id
+
+        # Certains backends ne renvoient pas explicitement `matched`.
+        # On considère alors un succès si HTTP est OK, qu'une identité est présente
+        # et qu'il n'y a pas de champ d'erreur explicite.
+        has_error = bool(api_response.get("error"))
+        if api_result.get("ok") and full_name and not has_error:
+            return True, full_name, pointage_type, pointage_id
+        return False, full_name, pointage_type, pointage_id
+
     def _scan_oval_geometry(frame_w: int, frame_h: int) -> tuple[float, float, float, float]:
         # Aligne la zone d'acceptation backend sur l'ovale affiché dans l'UI.
         oval_w = max(240.0, min(float(frame_w) * 0.33, 420.0))
@@ -1496,14 +1585,18 @@ def create_app() -> Flask:
 
       embedding_vector = embedding_result.pop("embedding")
       api_result = identify_embedding(embedding_vector, settings)
-      api_response = api_result.get("response", {})
-      if api_result.get("ok") and api_response.get("matched"):
+      api_response = api_result.get("response")
+      if not isinstance(api_response, dict):
+        api_response = {}
+
+      matched, full_name, pointage_type, pointage_id = _is_successful_identification(api_result)
+      if matched:
         return jsonify({
           "ok": True,
           "matched": True,
-          "full_name": api_response.get("full_name"),
-          "pointage_type": api_response.get("pointage_type"),
-          "pointage_id": api_response.get("pointage_id"),
+          "full_name": full_name or "Utilisateur",
+          "pointage_type": _normalize_pointage_type(pointage_type),
+          "pointage_id": pointage_id,
           "liveness": {
             "enabled": bool(settings.liveness_enabled),
             "is_live": None if liveness_result is None else liveness_result.get("is_live"),
