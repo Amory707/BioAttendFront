@@ -15,6 +15,23 @@ _persistent_camera: Any = None
 _persistent_lock = threading.Lock()
 
 
+def _effective_capture_size(settings: Settings) -> tuple[int, int, str]:
+    requested_w = max(1, int(settings.camera_width))
+    requested_h = max(1, int(settings.camera_height))
+
+    if not settings.camera_full_fov:
+        return requested_w, requested_h, "requested"
+
+    # En mode full FOV, on evite les demandes 16:9 qui rognent souvent le capteur 4:3.
+    requested_ratio = requested_w / float(max(1, requested_h))
+    if requested_ratio >= 1.7:
+        adjusted_h = int(round(requested_w * 3.0 / 4.0))
+        if adjusted_h > requested_h:
+            return requested_w, adjusted_h, "full_fov_4_3"
+
+    return requested_w, requested_h, "requested"
+
+
 def _picamera_frame_format() -> str:
     # BGR888 aligne directement la sortie Picamera2 avec OpenCV.
     return "BGR888"
@@ -35,9 +52,10 @@ def _get_persistent_picamera2(settings: Settings) -> Any:
             return _persistent_camera
         Picamera2 = _load_picamera2_class()
         cam = Picamera2()
+        capture_w, capture_h, _ = _effective_capture_size(settings)
         configuration = cam.create_preview_configuration(
             main={
-                "size": (settings.camera_width, settings.camera_height),
+                "size": (capture_w, capture_h),
                 "format": _picamera_frame_format(),
             }
         )
@@ -109,11 +127,15 @@ def _shape_to_list(frame: Any) -> list[int]:
 
 
 def _probe_camera_picamera2(settings: Settings) -> dict[str, Any]:
+    capture_w, capture_h, size_policy = _effective_capture_size(settings)
     attempt: dict[str, Any] = {
         "source": "picamera2",
         "device": settings.camera_device,
         "read_attempt_count": settings.camera_read_attempts,
         "warmup_ms": settings.camera_warmup_ms,
+        "requested_size": [int(settings.camera_width), int(settings.camera_height)],
+        "effective_size": [capture_w, capture_h],
+        "size_policy": size_policy,
     }
 
     try:
@@ -130,7 +152,7 @@ def _probe_camera_picamera2(settings: Settings) -> dict[str, Any]:
         camera = Picamera2()
         configuration = camera.create_preview_configuration(
             main={
-                "size": (settings.camera_width, settings.camera_height),
+                "size": (capture_w, capture_h),
                 "format": _picamera_frame_format(),
             }
         )
@@ -192,6 +214,7 @@ def _probe_camera_picamera2(settings: Settings) -> dict[str, Any]:
 def _probe_camera_opencv(settings: Settings) -> dict[str, Any]:
     device = _resolve_device(settings.camera_device)
     backends = _resolve_backends(settings.camera_backend)
+    capture_w, capture_h, size_policy = _effective_capture_size(settings)
     attempts: list[dict[str, Any]] = []
 
     for backend_name, backend_flag in backends:
@@ -206,14 +229,17 @@ def _probe_camera_opencv(settings: Settings) -> dict[str, Any]:
                 "device": settings.camera_device,
                 "opened": opened,
                 "duration_ms": round((time.monotonic() - started_at) * 1000, 2),
+                "requested_size": [int(settings.camera_width), int(settings.camera_height)],
+                "effective_size": [capture_w, capture_h],
+                "size_policy": size_policy,
             }
 
             if not opened:
                 attempts.append(attempt)
                 continue
 
-            capture.set(cv2.CAP_PROP_FRAME_WIDTH, settings.camera_width)
-            capture.set(cv2.CAP_PROP_FRAME_HEIGHT, settings.camera_height)
+            capture.set(cv2.CAP_PROP_FRAME_WIDTH, capture_w)
+            capture.set(cv2.CAP_PROP_FRAME_HEIGHT, capture_h)
 
             if settings.camera_warmup_ms > 0:
                 time.sleep(settings.camera_warmup_ms / 1000)

@@ -91,6 +91,7 @@ ULTRASON_DISTANCE_CM=80       # Declenchement auto si distance mesuree <= ce seu
 # ── Caméra ───────────────────────────────────────────────────────
 CAMERA_WIDTH=1280
 CAMERA_HEIGHT=720
+CAMERA_FULL_FOV=true    # Force une demande 4:3 quand la resolution est 16:9 pour limiter le rognage vertical capteur
 CAMERA_MIRROR=true       # Inverse horizontalement l'image (effet miroir)
 CAMERA_SWAP_RB=false     # Mettre a true si les couleurs sont inversees (peau bleue, jaunes, etc.)
 CAMERA_JPEG_QUALITY=68   # 40-95: plus bas = plus fluide, plus haut = meilleure qualite
@@ -124,6 +125,7 @@ LIVENESS_LIVE_CLASS_IDX=0
 | Variable | Description | Valeur conseillée |
 |---|---|---|
 | `CAMERA_SOURCE` | Source de capture | `picamera2` sur Raspberry Pi, `opencv` sur PC |
+| `CAMERA_FULL_FOV` | Evite le rognage vertical a la source en preferant une capture 4:3 | `true` sur borne fixe |
 | `CAMERA_MIRROR` | Active l'effet miroir horizontal | `true` pour cadrage type selfie, `false` pour image réelle |
 | `CAMERA_SWAP_RB` | Inverse les canaux rouge/bleu si les couleurs paraissent fausses | `true` uniquement si l'image a des couleurs inversees |
 | `CAMERA_JPEG_QUALITY` | Qualité JPEG du flux live | `60-70` sur Raspberry Pi pour plus de fluidité |

@@ -60,6 +60,7 @@ class Settings:
     liveness_live_class_idx: int
     camera_width: int
     camera_height: int
+    camera_full_fov: bool
     camera_device: str
     camera_source: str
     camera_backend: str
@@ -96,6 +97,7 @@ class Settings:
             liveness_live_class_idx=_to_int(os.getenv("LIVENESS_LIVE_CLASS_IDX"), default=1),
             camera_width=_to_int(os.getenv("CAMERA_WIDTH"), default=1280),
             camera_height=_to_int(os.getenv("CAMERA_HEIGHT"), default=720),
+            camera_full_fov=_to_bool(os.getenv("CAMERA_FULL_FOV"), default=True),
             camera_device=os.getenv("CAMERA_DEVICE", "0"),
             camera_source=os.getenv("CAMERA_SOURCE", "auto").strip().lower(),
             camera_backend=os.getenv("CAMERA_BACKEND", "auto").strip().lower(),
