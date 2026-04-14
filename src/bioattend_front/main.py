@@ -105,7 +105,7 @@ _UI_HTML = """\
     .std-header { display: flex; align-items: center; }
 
     .std-brand {
-      font-size: clamp(0.95rem, 1.6vw, 1.35rem);
+      font-size: clamp(1.18rem, 2.1vw, 1.8rem);
       letter-spacing: 0.38em;
       text-transform: uppercase;
       font-weight: 700;
@@ -123,12 +123,19 @@ _UI_HTML = """\
       text-align: center;
     }
 
+    .std-bottom {
+      display: flex;
+      justify-content: center;
+      padding-top: clamp(10px, 2vh, 20px);
+    }
+
     /* Horloge héro */
     .clock-time {
       font-size: clamp(1.9rem, 6vw, 4.6rem);
       font-weight: 700;
       letter-spacing: 0.02em;
       line-height: 1.12;
+      white-space: pre-line;
       color: #ffffff;
       text-shadow:
         0 0 44px rgba(66, 200, 222, 0.35),
@@ -148,21 +155,21 @@ _UI_HTML = """\
       background: rgba(8, 18, 30, 0.52);
       backdrop-filter: blur(16px);
       -webkit-backdrop-filter: blur(16px);
-      padding: 9px 26px;
+      padding: 12px 32px;
       display: flex;
       align-items: center;
-      gap: 12px;
+      gap: 16px;
     }
 
     .card-title {
-      font-size: 0.66rem;
+      font-size: 0.82rem;
       letter-spacing: 0.2em;
       text-transform: uppercase;
       color: rgba(255, 255, 255, 0.35);
     }
 
     .card-value {
-      font-size: clamp(0.92rem, 1.4vw, 1.08rem);
+      font-size: clamp(1.18rem, 1.9vw, 1.45rem);
       color: #e6f6ff;
       font-weight: 600;
     }
@@ -378,7 +385,8 @@ _UI_HTML = """\
 
     .result-meta {
       color: rgba(255, 255, 255, 0.45);
-      font-size: clamp(0.86rem, 1.35vw, 1rem);
+      font-size: clamp(1.08rem, 2vw, 1.55rem);
+      line-height: 1.35;
     }
 
     @media (max-width: 560px) {
@@ -399,10 +407,13 @@ _UI_HTML = """\
 
       <main class="std-main">
         <div class="clock-time" id="clockTime">--:--:-- | --- | --/--/----</div>
+      </main>
+
+      <div class="std-bottom">
         <div class="std-cards">
           <article class="card"><div class="card-title">Meteo</div><div class="card-value" id="weatherLabel">Mise a jour...</div></article>
         </div>
-      </main>
+      </div>
     </section>
 
     <section class="view view-capture" id="viewCapture">
@@ -555,7 +566,7 @@ _UI_HTML = """\
       try {
         var now = new Date();
         if (clockTime) {
-          clockTime.textContent = _fmtDateEuroLong(now) + " | " + _fmtTime(now);
+          clockTime.textContent = _fmtDateEuroLong(now) + "\n" + _fmtTime(now);
         }
       } catch(e) {}
     }
