@@ -385,7 +385,7 @@ _UI_HTML = """\
 
     .result-meta {
       color: rgba(255, 255, 255, 0.45);
-      font-size: clamp(1.08rem, 2vw, 1.55rem);
+      font-size: clamp(1.3rem, 2.6vw, 1.95rem);
       line-height: 1.35;
     }
 
