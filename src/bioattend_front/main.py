@@ -660,6 +660,7 @@ _UI_HTML = """\
       resultMeta.textContent = "Heure: " + _fmtTime(now) + " | Date: " + _fmtDateEuroLong(now);
     }
 
+    
     function showResultError(data) {
       var errorType = data.error_type || "recognition_failed";
       var titleByType = {
