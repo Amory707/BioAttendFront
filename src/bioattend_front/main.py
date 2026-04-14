@@ -202,7 +202,9 @@ _UI_HTML = """\
     #feed {
       width: 100%;
       height: 100%;
-      object-fit: cover;
+      object-fit: contain;
+      object-position: center center;
+      background: #000;
       display: block;
     }
 
@@ -275,6 +277,23 @@ _UI_HTML = """\
       padding: 6px 14px;
       color: rgba(255, 255, 255, 0.65);
       font-size: 0.86rem;
+    }
+
+    .capture-debug {
+      border-radius: 10px;
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      background: rgba(6, 14, 22, 0.62);
+      backdrop-filter: blur(8px);
+      padding: 6px 10px;
+      color: rgba(255, 255, 255, 0.74);
+      font-size: 0.74rem;
+      font-family: "Consolas", "Liberation Mono", monospace;
+      letter-spacing: 0.02em;
+      text-transform: none;
+      max-width: min(92vw, 560px);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
     }
 
     .capture-status {
@@ -389,6 +408,7 @@ _UI_HTML = """\
     @media (max-width: 560px) {
       .view-standard { padding: 14px 16px; }
       .capture-overlay { flex-direction: column; align-items: flex-start; gap: 6px; }
+      .capture-debug { white-space: normal; }
     }
   </style>
 </head>
@@ -419,6 +439,7 @@ _UI_HTML = """\
         <div class="capture-overlay">
           <div class="capture-title">Mode capture</div>
           <div class="capture-help">Centrez votre visage dans l'ovale</div>
+          <div class="capture-debug" id="captureDebug" hidden>Debug flux</div>
         </div>
         <div class="capture-status">
           <div class="capture-status-main" id="captureStatusMain">Preparation de la reconnaissance...</div>
@@ -450,6 +471,7 @@ _UI_HTML = """\
     var stdFooter = document.getElementById("stdFooter");
     var captureStatusMain = document.getElementById("captureStatusMain");
     var captureStatusSub = document.getElementById("captureStatusSub");
+    var captureDebug = document.getElementById("captureDebug");
     var resultCard = document.getElementById("resultCard");
     var resultTag = document.getElementById("resultTag");
     var resultGreeting = document.getElementById("resultGreeting");
@@ -477,6 +499,7 @@ _UI_HTML = """\
     }
 
     var SHOW_BOXES = getQueryParam("boxes") === "1";
+    var SHOW_DEBUG = getQueryParam("debug") === "1";
 
     var streamRunning = false;
     var streamTimer = null;
@@ -517,6 +540,23 @@ _UI_HTML = """\
       }, delay);
     }
 
+    function updateCaptureDebug() {
+      if (!SHOW_DEBUG || !captureDebug || !feed) return;
+
+      var camW = feed.naturalWidth || 0;
+      var camH = feed.naturalHeight || 0;
+      var viewW = feed.clientWidth || window.innerWidth || 0;
+      var viewH = feed.clientHeight || window.innerHeight || 0;
+
+      var camRatio = camW > 0 && camH > 0 ? (camW / camH).toFixed(3) : "n/a";
+      var viewRatio = viewW > 0 && viewH > 0 ? (viewW / viewH).toFixed(3) : "n/a";
+
+      captureDebug.textContent =
+        "cam: " + camW + "x" + camH + " (r=" + camRatio + ") | " +
+        "zone: " + viewW + "x" + viewH + " (r=" + viewRatio + ") | " +
+        "fit: contain (no crop)";
+    }
+
     function startStream() {
       if (streamRunning) return;
       streamRunning = true;
@@ -529,8 +569,12 @@ _UI_HTML = """\
       streamTimer = null;
     }
 
-    feed.addEventListener("load", function() { scheduleNextFrame(90); });
+    feed.addEventListener("load", function() {
+      updateCaptureDebug();
+      scheduleNextFrame(90);
+    });
     feed.addEventListener("error", function() { scheduleNextFrame(180); });
+    window.addEventListener("resize", updateCaptureDebug);
 
     var _DAYS = ["Dimanche", "Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi"];
     var _MONTHS = ["janvier", "fevrier", "mars", "avril", "mai", "juin", "juillet", "aout", "septembre", "octobre", "novembre", "decembre"];
@@ -760,6 +804,12 @@ _UI_HTML = """\
     }
 
     if (CAMERA_MIRROR) feed.style.transform = "scaleX(-1)";
+
+    if (SHOW_DEBUG && captureDebug) {
+      captureDebug.hidden = false;
+      updateCaptureDebug();
+      setInterval(updateCaptureDebug, 1000);
+    }
 
     // ── Polling capteur de presence (PIR / ultrason) ───────────────────────
     if (AUTO_TRIGGER_ENABLED) {
