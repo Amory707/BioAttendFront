@@ -706,7 +706,6 @@ _UI_HTML = """\
       var titleByType = {
         "no_face_detected": "Visage non detecte",
         "recognition_failed": "Echec de reconnaissance",
-        "unknown_user": "Utilisateur inconnu",
         "spoof_attempt": "Anti-spoof"
       };
       resultCard.className = "result-card error";
@@ -1605,18 +1604,19 @@ def create_app() -> Flask:
           },
         }), 200
 
-      event_type = "unknown_user" if api_result.get("status_code") in {401, 404} else "recognition_failed"
+      identify_event_type = "unknown_user" if api_result.get("status_code") in {401, 404} else "recognition_failed"
       event_type, event_result = _emit_platform_event(
-        event_type,
+        identify_event_type,
         status="rejected",
         message=api_response.get("error", "Identité non reconnue"),
         details={"stage": "identify", "identify": api_result},
       )
+      user_error_message = "Echec de reconnaissance"
       return jsonify({
         "ok": False,
         "matched": False,
-        "error": api_response.get("error", "Identité non reconnue"),
-        "error_type": event_type,
+        "error": user_error_message,
+        "error_type": "recognition_failed",
         "platform_event_type": event_type,
         "event_logged": bool(event_result.get("ok")),
         "event_result": event_result,
