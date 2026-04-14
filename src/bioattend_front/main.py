@@ -209,10 +209,10 @@ _UI_HTML = """\
     .scan-oval {
       position: absolute;
       left: 50%;
-      top: 50%;
+      top: __SCAN_OVAL_CENTER_Y_PCT__%;
       width: clamp(240px, 33vw, 420px);
-      aspect-ratio: 0.76;
-      transform: translate(-50%, -54%);
+      aspect-ratio: __SCAN_OVAL_ASPECT_RATIO__;
+      transform: translate(-50%, -50%);
       border-radius: 50%;
       border: 3px solid rgba(255, 255, 255, 0.72);
       box-shadow:
@@ -234,7 +234,7 @@ _UI_HTML = """\
     .scan-line {
       position: absolute;
       left: 50%;
-      top: 50%;
+      top: var(--scan-cy, 50%);
       width: clamp(200px, 27vw, 340px);
       height: 2px;
       background: linear-gradient(90deg, transparent, rgba(61, 232, 154, 0.95), transparent);
@@ -244,9 +244,9 @@ _UI_HTML = """\
     }
 
     @keyframes scan {
-      0%   { transform: translate(-50%, -90px); opacity: 0.1; }
-      50%  { transform: translate(-50%, 90px);  opacity: 1; }
-      100% { transform: translate(-50%, -90px); opacity: 0.1; }
+      0%   { transform: translate(-50%, calc(-1 * var(--scan-amp, 90px))); opacity: 0.1; }
+      50%  { transform: translate(-50%, var(--scan-amp, 90px));  opacity: 1; }
+      100% { transform: translate(-50%, calc(-1 * var(--scan-amp, 90px))); opacity: 0.1; }
     }
 
     .capture-overlay {
@@ -795,6 +795,27 @@ _UI_HTML = """\
 
     updateTriggerFooterText();
 
+    // ── Alignement dynamique de la scan-line sur le centre réel de l'ovale ──
+    // La scan-line utilise top:var(--scan-cy) et l'animation var(--scan-amp).
+    // On lit la géométrie réelle après layout pour rester sync avec l'ovale
+    // même si l'aspect-ratio ou le center_y_pct ont été modifiés via .env.
+    function _alignScanLine() {
+      if (!scanOval) return;
+      try {
+        var wrapEl = document.querySelector(".capture-wrap");
+        if (!wrapEl) return;
+        var wr = wrapEl.getBoundingClientRect();
+        var or_ = scanOval.getBoundingClientRect();
+        var cy = (or_.top - wr.top) + or_.height * 0.5;
+        var amp = Math.round(or_.height * 0.35);
+        document.documentElement.style.setProperty("--scan-cy", cy + "px");
+        document.documentElement.style.setProperty("--scan-amp", amp + "px");
+      } catch (e) {}
+    }
+    _alignScanLine();
+    window.addEventListener("resize", _alignScanLine);
+    // ─────────────────────────────────────────────────────────────────────────
+
     updateClock();
     setInterval(updateClock, 1000);
     updateWeather();
@@ -933,10 +954,11 @@ def create_app() -> Flask:
 
     def _scan_oval_geometry(frame_w: int, frame_h: int) -> tuple[float, float, float, float]:
         # Aligne la zone d'acceptation backend sur l'ovale affiché dans l'UI.
+        # Les paramètres sont pilotés par SCAN_OVAL_ASPECT_RATIO et SCAN_OVAL_CENTER_Y_PCT.
         oval_w = max(240.0, min(float(frame_w) * 0.33, 420.0))
-        oval_h = oval_w / 0.76
+        oval_h = oval_w / settings.scan_oval_aspect_ratio
         cx = float(frame_w) * 0.5
-        cy = (float(frame_h) * 0.5) - (oval_h * 0.04)
+        cy = float(frame_h) * (settings.scan_oval_center_y_pct / 100.0)
         rx = oval_w * 0.5
         ry = oval_h * 0.5
         return cx, cy, rx, ry
@@ -1192,6 +1214,8 @@ def create_app() -> Flask:
         html = html.replace("__CAMERA_MIRROR__", "true" if settings.camera_mirror else "false")
         html = html.replace("__POINTAGE_TRIGGER_MODE__", settings.pointage_trigger_mode)
         html = html.replace("__ULTRASON_DISTANCE_CM__", str(settings.ultrason_distance_cm))
+        html = html.replace("__SCAN_OVAL_ASPECT_RATIO__", str(settings.scan_oval_aspect_ratio))
+        html = html.replace("__SCAN_OVAL_CENTER_Y_PCT__", str(round(settings.scan_oval_center_y_pct, 1)))
         return html, 200, {"Content-Type": "text/html; charset=utf-8"}
 
     @app.get("/assets/logo-projet")
