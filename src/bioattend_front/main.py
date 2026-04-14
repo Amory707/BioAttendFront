@@ -667,16 +667,16 @@ _UI_HTML = """\
 
     function _weatherIconFromCode(code) {
       // Codes meteo Open-Meteo: https://open-meteo.com/en/docs
-      if (typeof code !== "number") return "\u2601\ufe0f";
-      if (code === 0) return "\u2600\ufe0f"; // ciel degage
-      if (code === 1 || code === 2) return "\ud83c\udf24\ufe0f"; // peu nuageux
-      if (code === 3) return "\u2601\ufe0f"; // couvert
-      if (code === 45 || code === 48) return "\ud83c\udf2b\ufe0f"; // brouillard
-      if (code === 51 || code === 53 || code === 55 || code === 56 || code === 57) return "\ud83c\udf26\ufe0f"; // bruine
-      if (code === 61 || code === 63 || code === 65 || code === 66 || code === 67 || code === 80 || code === 81 || code === 82) return "\ud83c\udf27\ufe0f"; // pluie
-      if (code === 71 || code === 73 || code === 75 || code === 77 || code === 85 || code === 86) return "\ud83c\udf28\ufe0f"; // neige
-      if (code === 95 || code === 96 || code === 99) return "\u26c8\ufe0f"; // orage
-      return "\u2601\ufe0f";
+      if (typeof code !== "number") return "\u2601";
+      if (code === 0) return "\u2600"; // ciel degage
+      if (code === 1 || code === 2) return "\u26c5"; // peu nuageux
+      if (code === 3) return "\u2601"; // couvert
+      if (code === 45 || code === 48) return "\u2601"; // brouillard
+      if (code === 51 || code === 53 || code === 55 || code === 56 || code === 57) return "\u2614"; // bruine
+      if (code === 61 || code === 63 || code === 65 || code === 66 || code === 67 || code === 80 || code === 81 || code === 82) return "\u2614"; // pluie
+      if (code === 71 || code === 73 || code === 75 || code === 77 || code === 85 || code === 86) return "\u2744"; // neige
+      if (code === 95 || code === 96 || code === 99) return "\u26a1"; // orage
+      return "\u2601";
     }
 
     function fetchWeatherFor(lat, lon, sourceName, onSuccess, onError) {
