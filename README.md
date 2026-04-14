@@ -84,6 +84,7 @@ DEBUG=false
 KIOSK_MODE=true          # Active l'UI borne plein écran
 POINTAGE_TRIGGER_MODE=space   # "space" (clavier/touch), "pir" ou "ultrason"
 ULTRASON_CAPTURE_PREP_DELAY_MS=2600  # Delai pour se placer avant capture quand mode ultrason
+ULTRASON_PRESENCE_COOLDOWN_MS=8000   # Pause apres declenchement avant autoriser un nouveau pointage ultrason
 GPIO_PIR=17
 GPIO_ULTRASON_TRIGGER=18
 GPIO_ULTRASON_ECHO=24
@@ -138,6 +139,7 @@ LIVENESS_LIVE_CLASS_IDX=0
 | `KIOSK_MODE` | Active le comportement borne (plein écran auto) | `true` sur Raspberry Pi |
 | `POINTAGE_TRIGGER_MODE` | Source de déclenchement du pointage | `space`, `pir` ou `ultrason` |
 | `ULTRASON_CAPTURE_PREP_DELAY_MS` | Délai avant capture quand le déclenchement vient de l'ultrason | `2200-3200` selon l'usage |
+| `ULTRASON_PRESENCE_COOLDOWN_MS` | Pause après déclenchement avant un nouveau pointage ultrason | `5000-12000` selon le flux attendu |
 | `GPIO_ULTRASON_TRIGGER` | GPIO BCM du pin Trigger du capteur ultrason | `18` |
 | `GPIO_ULTRASON_ECHO` | GPIO BCM du pin Echo du capteur ultrason | `24` |
 | `ULTRASON_DISTANCE_CM` | Seuil distance (en cm) pour déclenchement auto | `80` |

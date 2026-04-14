@@ -105,7 +105,7 @@ _UI_HTML = """\
     .std-header { display: flex; align-items: center; }
 
     .std-brand {
-      font-size: clamp(0.68rem, 1.1vw, 0.9rem);
+      font-size: clamp(0.95rem, 1.6vw, 1.35rem);
       letter-spacing: 0.38em;
       text-transform: uppercase;
       font-weight: 700;
@@ -260,24 +260,6 @@ _UI_HTML = """\
       align-items: center;
     }
 
-    .capture-title {
-      font-size: clamp(0.9rem, 1.7vw, 1.25rem);
-      letter-spacing: 0.14em;
-      text-transform: uppercase;
-      color: rgba(255, 255, 255, 0.9);
-      text-shadow: 0 2px 16px rgba(0, 0, 0, 0.7);
-    }
-
-    .capture-help {
-      border-radius: 999px;
-      border: 1px solid rgba(255, 255, 255, 0.14);
-      background: rgba(6, 14, 22, 0.52);
-      backdrop-filter: blur(8px);
-      padding: 6px 14px;
-      color: rgba(255, 255, 255, 0.65);
-      font-size: 0.86rem;
-    }
-
     .capture-debug {
       border-radius: 10px;
       border: 1px solid rgba(255, 255, 255, 0.12);
@@ -399,11 +381,6 @@ _UI_HTML = """\
       font-size: clamp(0.86rem, 1.35vw, 1rem);
     }
 
-    .result-next {
-      color: rgba(255, 255, 255, 0.24);
-      font-size: 0.82rem;
-    }
-
     @media (max-width: 560px) {
       .view-standard { padding: 14px 16px; }
       .capture-overlay { flex-direction: column; align-items: flex-start; gap: 6px; }
@@ -426,8 +403,6 @@ _UI_HTML = """\
           <article class="card"><div class="card-title">Meteo</div><div class="card-value" id="weatherLabel">Mise a jour...</div></article>
         </div>
       </main>
-
-      <footer class="std-footer" id="stdFooter">En attente de declenchement du pointage</footer>
     </section>
 
     <section class="view view-capture" id="viewCapture">
@@ -436,8 +411,6 @@ _UI_HTML = """\
         <div class="scan-oval" id="scanOval"></div>
         <div class="scan-line" aria-hidden="true"></div>
         <div class="capture-overlay">
-          <div class="capture-title">Mode capture</div>
-          <div class="capture-help">Centrez votre visage dans l'ovale</div>
           <div class="capture-debug" id="captureDebug" hidden>Debug flux</div>
         </div>
         <div class="capture-status">
@@ -454,7 +427,6 @@ _UI_HTML = """\
         <div class="result-greeting" id="resultGreeting">Traitement en cours...</div>
         <div class="result-kind" id="resultKind">--</div>
         <div class="result-meta" id="resultMeta">--</div>
-        <div class="result-next">Retour automatique au mode standard</div>
       </div>
     </section>
   </div>
@@ -467,7 +439,6 @@ _UI_HTML = """\
     var viewResult = document.getElementById("viewResult");
     var clockTime = document.getElementById("clockTime");
     var weatherLabel = document.getElementById("weatherLabel");
-    var stdFooter = document.getElementById("stdFooter");
     var captureStatusMain = document.getElementById("captureStatusMain");
     var captureStatusSub = document.getElementById("captureStatusSub");
     var captureDebug = document.getElementById("captureDebug");
@@ -482,6 +453,7 @@ _UI_HTML = """\
     var POINTAGE_TRIGGER_MODE = "__POINTAGE_TRIGGER_MODE__";
     var ULTRASON_DISTANCE_CM = parseFloat("__ULTRASON_DISTANCE_CM__") || 80;
     var ULTRASON_CAPTURE_PREP_DELAY_MS = parseInt("__ULTRASON_CAPTURE_PREP_DELAY_MS__", 10);
+    var ULTRASON_PRESENCE_COOLDOWN_MS = parseInt("__ULTRASON_PRESENCE_COOLDOWN_MS__", 10);
     var MANUAL_TRIGGER_ENABLED = POINTAGE_TRIGGER_MODE === "space";
     var AUTO_TRIGGER_ENABLED = !MANUAL_TRIGGER_ENABLED;
 
@@ -520,19 +492,6 @@ _UI_HTML = """\
       captureStatusMain.textContent = mainText;
       captureStatusSub.textContent = subText;
       scanOval.className = "scan-oval" + (mood ? " " + mood : "");
-    }
-
-    function updateTriggerFooterText() {
-      if (!stdFooter) return;
-      if (MANUAL_TRIGGER_ENABLED) {
-        stdFooter.innerHTML = "Appuyez sur Espace pour lancer la capture";
-        return;
-      }
-      if (POINTAGE_TRIGGER_MODE === "ultrason") {
-        stdFooter.textContent = "Mode ultrason actif: declenchement automatique sous " + Math.round(ULTRASON_DISTANCE_CM) + " cm";
-        return;
-      }
-      stdFooter.textContent = "Mode PIR actif: declenchement automatique sur detection de presence";
     }
 
     function scheduleNextFrame(delay) {
@@ -752,7 +711,6 @@ _UI_HTML = """\
         recognitionInProgress = false;
         setMode("standard");
         setCaptureStatus("Preparation de la reconnaissance...", "Ne bougez pas pendant la lecture", "");
-        updateTriggerFooterText();
       }, 4200);
     }
 
@@ -823,7 +781,6 @@ _UI_HTML = """\
     document.body.addEventListener("click", function() { document.body.focus(); });
 
     if (KIOSK_MODE && MANUAL_TRIGGER_ENABLED) {
-      stdFooter.innerHTML = "Mode kiosk actif \u2014 appuyez sur Espace pour capturer";
       document.addEventListener("pointerdown", function() {
         enterFullscreen();
       }, false);
@@ -842,7 +799,9 @@ _UI_HTML = """\
       var _presenceLastDetected = false;
       var _presenceCooldownUntil = 0;
       var PRESENCE_POLL_INTERVAL_MS = 400;
-      var PRESENCE_COOLDOWN_MS = 8000;
+      var PRESENCE_COOLDOWN_MS = !isNaN(ULTRASON_PRESENCE_COOLDOWN_MS) && ULTRASON_PRESENCE_COOLDOWN_MS >= 0
+        ? ULTRASON_PRESENCE_COOLDOWN_MS
+        : 8000;
 
       function _presencePoll() {
         if (recognitionInProgress) return;
@@ -869,8 +828,6 @@ _UI_HTML = """\
       setInterval(_presencePoll, PRESENCE_POLL_INTERVAL_MS);
     }
     // ─────────────────────────────────────────────────────────────────────────
-
-    updateTriggerFooterText();
 
     updateClock();
     setInterval(updateClock, 1000);
@@ -1258,6 +1215,7 @@ def create_app() -> Flask:
         html = html.replace("__POINTAGE_TRIGGER_MODE__", settings.pointage_trigger_mode)
         html = html.replace("__ULTRASON_DISTANCE_CM__", str(settings.ultrason_distance_cm))
         html = html.replace("__ULTRASON_CAPTURE_PREP_DELAY_MS__", str(settings.ultrason_capture_prep_delay_ms))
+        html = html.replace("__ULTRASON_PRESENCE_COOLDOWN_MS__", str(settings.ultrason_presence_cooldown_ms))
         return html, 200, {"Content-Type": "text/html; charset=utf-8"}
 
     @app.get("/assets/logo-projet")
