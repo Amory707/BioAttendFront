@@ -80,6 +80,7 @@ class Settings:
     scan_oval_aspect_ratio: float
     scan_oval_center_y_pct: float
     scan_oval_height_pct: float
+    camera_feed_fit: str
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -122,6 +123,7 @@ class Settings:
             scan_oval_aspect_ratio=max(0.3, _to_float(os.getenv("SCAN_OVAL_ASPECT_RATIO"), default=0.76)),
             scan_oval_center_y_pct=max(10.0, min(90.0, _to_float(os.getenv("SCAN_OVAL_CENTER_Y_PCT"), default=47.0))),
             scan_oval_height_pct=max(20.0, min(95.0, _to_float(os.getenv("SCAN_OVAL_HEIGHT_PCT"), default=76.0))),
+            camera_feed_fit=os.getenv("CAMERA_FEED_FIT", "cover").strip().lower() if os.getenv("CAMERA_FEED_FIT", "cover").strip().lower() in {"cover", "contain"} else "cover",
         )
 
     def as_public_dict(self) -> dict[str, object]:

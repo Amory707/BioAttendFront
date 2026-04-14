@@ -202,7 +202,7 @@ _UI_HTML = """\
     #feed {
       width: 100%;
       height: 100%;
-      object-fit: cover;
+      object-fit: __CAMERA_FEED_FIT__;
       display: block;
     }
 
@@ -210,10 +210,7 @@ _UI_HTML = """\
       position: absolute;
       left: 50%;
       top: __SCAN_OVAL_CENTER_Y_PCT__%;
-      height: clamp(260px, calc(__SCAN_OVAL_HEIGHT_PCT__ * 1vh), 92vh);
-      width: auto;
-      max-width: 92vw;
-      aspect-ratio: __SCAN_OVAL_ASPECT_RATIO__;
+      /* width et height sont positionnés par JS (_sizeAndAlignOval) */
       transform: translate(-50%, -50%);
       border-radius: 50%;
       border: 3px solid rgba(255, 255, 255, 0.72);
@@ -464,6 +461,9 @@ _UI_HTML = """\
     var ULTRASON_DISTANCE_CM = parseFloat("__ULTRASON_DISTANCE_CM__") || 80;
     var MANUAL_TRIGGER_ENABLED = POINTAGE_TRIGGER_MODE === "space";
     var AUTO_TRIGGER_ENABLED = !MANUAL_TRIGGER_ENABLED;
+    var SCAN_OVAL_HEIGHT_PCT  = parseFloat("__SCAN_OVAL_HEIGHT_PCT__")  || 76;
+    var SCAN_OVAL_ASPECT_RATIO = parseFloat("__SCAN_OVAL_ASPECT_RATIO__") || 0.76;
+    var CAMERA_FEED_FIT = "__CAMERA_FEED_FIT__";
 
     function getQueryParam(name) {
       var search = window.location.search || "";
@@ -797,27 +797,84 @@ _UI_HTML = """\
 
     updateTriggerFooterText();
 
-    // ── Alignement dynamique de la scan-line sur le centre réel de l'ovale ──
-    // La scan-line utilise top:var(--scan-cy) et l'animation var(--scan-amp).
-    // On lit la géométrie réelle après layout pour rester sync avec l'ovale
-    // même si l'aspect-ratio ou le center_y_pct ont été modifiés via .env.
-    function _alignScanLine() {
+    // ── Taille et alignement de l'ovale ─────────────────────────────────────
+    // Quand CAMERA_FEED_FIT=contain, l'image n'occupe qu'une zone du conteneur
+    // (des barres noires apparaissent sur les côtés ou en haut/bas).
+    // L'ovale doit être positionné dans la zone image réellement visible.
+    function _getFeedImageBounds() {
+      var containerW = feed.clientWidth  || window.innerWidth;
+      var containerH = feed.clientHeight || window.innerHeight;
+      if (CAMERA_FEED_FIT !== "contain") {
+        return { x: 0, y: 0, w: containerW, h: containerH };
+      }
+      // naturalWidth/Height disponibles après chargement d'au moins une frame.
+      var natW = (feed.naturalWidth  > 0) ? feed.naturalWidth  : 1280;
+      var natH = (feed.naturalHeight > 0) ? feed.naturalHeight : 720;
+      var containerRatio = containerW / containerH;
+      var imageRatio     = natW / natH;
+      var imgW, imgH;
+      if (imageRatio > containerRatio) {
+        // plus large que le conteneur → contraint par la largeur
+        imgW = containerW;
+        imgH = containerW / imageRatio;
+      } else {
+        // plus haut que le conteneur → contraint par la hauteur
+        imgH = containerH;
+        imgW = containerH * imageRatio;
+      }
+      return {
+        x: (containerW - imgW) / 2,
+        y: (containerH - imgH) / 2,
+        w: imgW,
+        h: imgH
+      };
+    }
+
+    function _sizeAndAlignOval() {
       if (!scanOval) return;
       try {
+        var bounds = _getFeedImageBounds();
+
+        // Hauteur cible : SCAN_OVAL_HEIGHT_PCT % de la hauteur de l'image visible
+        var h = bounds.h * (SCAN_OVAL_HEIGHT_PCT / 100.0);
+        h = Math.max(180, Math.min(h, bounds.h * 0.96));
+
+        // Largeur dérivée du ratio
+        var w = h * SCAN_OVAL_ASPECT_RATIO;
+        if (w > bounds.w * 0.96) {
+          w = bounds.w * 0.96;
+          h = w / SCAN_OVAL_ASPECT_RATIO;
+        }
+
+        // Centre de l'ovale dans la zone image (SCAN_OVAL_CENTER_Y_PCT)
+        // top CSS est en % du conteneur, mais l'image peut être offsettée (contain).
+        // On recalcule le top absolu par rapport au conteneur.
+        var ovalCenterY = bounds.y + bounds.h * (parseFloat("__SCAN_OVAL_CENTER_Y_PCT__") / 100.0);
+        var ovalTop     = ovalCenterY - h / 2;
+
+        scanOval.style.top    = Math.round(ovalTop) + "px";
+        scanOval.style.left   = Math.round(bounds.x + bounds.w / 2) + "px";
+        scanOval.style.width  = Math.round(w) + "px";
+        scanOval.style.height = Math.round(h) + "px";
+        scanOval.style.transform = "translate(-50%, 0)";
+
+        // Scan-line alignée sur le centre réel de l'ovale
         var wrapEl = document.querySelector(".capture-wrap");
         if (!wrapEl) return;
-        var wr = wrapEl.getBoundingClientRect();
+        var wr  = wrapEl.getBoundingClientRect();
         var or_ = scanOval.getBoundingClientRect();
-        var cy = (or_.top - wr.top) + or_.height * 0.5;
-        var amp = Math.round(or_.height * 0.35);
-        var scanLineW = Math.max(140, Math.round(or_.width * 0.82));
-        document.documentElement.style.setProperty("--scan-cy", cy + "px");
-        document.documentElement.style.setProperty("--scan-amp", amp + "px");
-        document.documentElement.style.setProperty("--scan-line-w", scanLineW + "px");
+        var cy    = (or_.top  - wr.top) + or_.height * 0.5;
+        var amp   = Math.round(or_.height * 0.38);
+        var lineW = Math.max(140, Math.round(or_.width * 0.82));
+        document.documentElement.style.setProperty("--scan-cy",     cy    + "px");
+        document.documentElement.style.setProperty("--scan-amp",    amp   + "px");
+        document.documentElement.style.setProperty("--scan-line-w", lineW + "px");
       } catch (e) {}
     }
-    _alignScanLine();
-    window.addEventListener("resize", _alignScanLine);
+    _sizeAndAlignOval();
+    // Recalcul dès que la première frame chargée révèle naturalWidth/Height
+    feed.addEventListener("load", _sizeAndAlignOval);
+    window.addEventListener("resize", _sizeAndAlignOval);
     // ─────────────────────────────────────────────────────────────────────────
 
     updateClock();
@@ -1227,6 +1284,7 @@ def create_app() -> Flask:
         html = html.replace("__SCAN_OVAL_ASPECT_RATIO__", str(settings.scan_oval_aspect_ratio))
         html = html.replace("__SCAN_OVAL_CENTER_Y_PCT__", str(round(settings.scan_oval_center_y_pct, 1)))
         html = html.replace("__SCAN_OVAL_HEIGHT_PCT__", str(round(settings.scan_oval_height_pct, 1)))
+        html = html.replace("__CAMERA_FEED_FIT__", settings.camera_feed_fit)
         return html, 200, {"Content-Type": "text/html; charset=utf-8"}
 
     @app.get("/assets/logo-projet")
