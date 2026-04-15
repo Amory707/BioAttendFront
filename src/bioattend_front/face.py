@@ -15,13 +15,12 @@ _EYE_CASCADE = cv2.CascadeClassifier(_EYE_CASCADE_PATH)
 # Taille minimale (en px) qu'un côté du visage doit atteindre pour être
 # considéré comme valide. En dessous, on retourne "aucun visage".
 _MIN_FACE_SIZE_PX = 80
-_CENTER_TOLERANCE_RATIO = 0.42
+_CENTER_TOLERANCE_RATIO = 0.35
 _MIN_FACE_ASPECT_RATIO = 0.72
 _MAX_FACE_ASPECT_RATIO = 1.45
-_MIN_FACE_AREA_RATIO = 0.01
+_MIN_FACE_AREA_RATIO = 0.015
 _MAX_FACE_AREA_RATIO = 0.65
 _REQUIRE_EYE_CHECK = True
-_EYE_GRACE_AREA_RATIO = 0.07
 
 
 def _to_bbox(face: tuple[int, int, int, int]) -> dict[str, int]:
@@ -61,18 +60,15 @@ def _looks_like_face(
         y2 = min(frame_h, y + top_h)
         if x2 > x1 and y2 > y1:
             roi = gray[y1:y2, x1:x2]
-            min_eye = max(10, int(min(w, h) * 0.10))
+            min_eye = max(12, int(min(w, h) * 0.12))
             eyes = _EYE_CASCADE.detectMultiScale(
                 roi,
                 scaleFactor=1.08,
-                minNeighbors=4,
+                minNeighbors=6,
                 minSize=(min_eye, min_eye),
             )
             if len(eyes) == 0:
-                # En pratique, les lunettes/reflets peuvent masquer les yeux.
-                # Si le visage est deja grand et bien structure, on reste permissif.
-                if area_ratio < _EYE_GRACE_AREA_RATIO:
-                    return False, "no_eyes"
+                return False, "no_eyes"
 
     return True, "ok"
 
@@ -160,9 +156,9 @@ def detect_and_crop_face(frame: Any) -> dict[str, Any]:
     clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
     gray_clahe = clahe.apply(gray)
     passes = [
-        {"gray": gray, "scale_factor": 1.10, "min_neighbors": 5, "min_size": (88, 88)},
-        {"gray": gray_eq, "scale_factor": 1.08, "min_neighbors": 4, "min_size": (72, 72)},
-        {"gray": gray_clahe, "scale_factor": 1.06, "min_neighbors": 3, "min_size": (56, 56)},
+        {"gray": gray, "scale_factor": 1.10, "min_neighbors": 6, "min_size": (96, 96)},
+        {"gray": gray_eq, "scale_factor": 1.08, "min_neighbors": 5, "min_size": (80, 80)},
+        {"gray": gray_clahe, "scale_factor": 1.06, "min_neighbors": 4, "min_size": (64, 64)},
     ]
 
     faces: list[tuple[int, int, int, int]] = []
