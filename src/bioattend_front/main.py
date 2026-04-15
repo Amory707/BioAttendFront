@@ -63,8 +63,8 @@ _UI_HTML = """\
       height: 100%;
       object-fit: cover;
       object-position: center;
-      opacity: 0.30;
-      filter: saturate(1.05) brightness(0.6);
+      opacity: 0.34;
+      filter: saturate(1.02) brightness(1.0);
     }
 
     /* Vignette douce : assombrit seulement les bords haut/bas */
@@ -74,12 +74,11 @@ _UI_HTML = """\
       inset: 0;
       pointer-events: none;
       background:
-        radial-gradient(ellipse 90% 70% at 50% 50%, rgba(5,12,22,0.4) 0%, transparent 70%),
         linear-gradient(to bottom,
-          rgba(4,10,18,0.78) 0%,
+          rgba(4,10,18,0.10) 0%,
           rgba(4,10,18,0.0) 16%,
           rgba(4,10,18,0.0) 80%,
-          rgba(4,10,18,0.82) 100%);
+          rgba(4,10,18,0.12) 100%);
     }
 
     /* ── Vues ── */
@@ -106,7 +105,7 @@ _UI_HTML = """\
     .std-header { display: flex; align-items: center; }
 
     .std-brand {
-      font-size: clamp(0.68rem, 1.1vw, 0.9rem);
+      font-size: clamp(1.18rem, 2.1vw, 1.8rem);
       letter-spacing: 0.38em;
       text-transform: uppercase;
       font-weight: 700;
@@ -124,12 +123,19 @@ _UI_HTML = """\
       text-align: center;
     }
 
+    .std-bottom {
+      display: flex;
+      justify-content: center;
+      padding-top: clamp(10px, 2vh, 20px);
+    }
+
     /* Horloge héro */
     .clock-time {
       font-size: clamp(1.9rem, 6vw, 4.6rem);
       font-weight: 700;
       letter-spacing: 0.02em;
       line-height: 1.12;
+      white-space: pre-line;
       color: #ffffff;
       text-shadow:
         0 0 44px rgba(66, 200, 222, 0.35),
@@ -149,21 +155,21 @@ _UI_HTML = """\
       background: rgba(8, 18, 30, 0.52);
       backdrop-filter: blur(16px);
       -webkit-backdrop-filter: blur(16px);
-      padding: 9px 26px;
+      padding: 12px 32px;
       display: flex;
       align-items: center;
-      gap: 12px;
+      gap: 16px;
     }
 
     .card-title {
-      font-size: 0.66rem;
+      font-size: 0.82rem;
       letter-spacing: 0.2em;
       text-transform: uppercase;
       color: rgba(255, 255, 255, 0.35);
     }
 
     .card-value {
-      font-size: clamp(0.92rem, 1.4vw, 1.08rem);
+      font-size: clamp(1.18rem, 1.9vw, 1.45rem);
       color: #e6f6ff;
       font-weight: 600;
     }
@@ -202,7 +208,9 @@ _UI_HTML = """\
     #feed {
       width: 100%;
       height: 100%;
-      object-fit: cover;
+      object-fit: contain;
+      object-position: center center;
+      background: #000;
       display: block;
     }
 
@@ -259,22 +267,21 @@ _UI_HTML = """\
       align-items: center;
     }
 
-    .capture-title {
-      font-size: clamp(0.9rem, 1.7vw, 1.25rem);
-      letter-spacing: 0.14em;
-      text-transform: uppercase;
-      color: rgba(255, 255, 255, 0.9);
-      text-shadow: 0 2px 16px rgba(0, 0, 0, 0.7);
-    }
-
-    .capture-help {
-      border-radius: 999px;
-      border: 1px solid rgba(255, 255, 255, 0.14);
-      background: rgba(6, 14, 22, 0.52);
+    .capture-debug {
+      border-radius: 10px;
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      background: rgba(6, 14, 22, 0.62);
       backdrop-filter: blur(8px);
-      padding: 6px 14px;
-      color: rgba(255, 255, 255, 0.65);
-      font-size: 0.86rem;
+      padding: 6px 10px;
+      color: rgba(255, 255, 255, 0.74);
+      font-size: 0.74rem;
+      font-family: "Consolas", "Liberation Mono", monospace;
+      letter-spacing: 0.02em;
+      text-transform: none;
+      max-width: min(92vw, 560px);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
     }
 
     .capture-status {
@@ -378,17 +385,14 @@ _UI_HTML = """\
 
     .result-meta {
       color: rgba(255, 255, 255, 0.45);
-      font-size: clamp(0.86rem, 1.35vw, 1rem);
-    }
-
-    .result-next {
-      color: rgba(255, 255, 255, 0.24);
-      font-size: 0.82rem;
+      font-size: clamp(1.3rem, 2.6vw, 1.95rem);
+      line-height: 1.35;
     }
 
     @media (max-width: 560px) {
       .view-standard { padding: 14px 16px; }
       .capture-overlay { flex-direction: column; align-items: flex-start; gap: 6px; }
+      .capture-debug { white-space: normal; }
     }
   </style>
 </head>
@@ -403,12 +407,13 @@ _UI_HTML = """\
 
       <main class="std-main">
         <div class="clock-time" id="clockTime">--:--:-- | --- | --/--/----</div>
+      </main>
+
+      <div class="std-bottom">
         <div class="std-cards">
           <article class="card"><div class="card-title">Meteo</div><div class="card-value" id="weatherLabel">Mise a jour...</div></article>
         </div>
-      </main>
-
-      <footer class="std-footer" id="stdFooter">En attente de declenchement du pointage</footer>
+      </div>
     </section>
 
     <section class="view view-capture" id="viewCapture">
@@ -417,8 +422,7 @@ _UI_HTML = """\
         <div class="scan-oval" id="scanOval"></div>
         <div class="scan-line" aria-hidden="true"></div>
         <div class="capture-overlay">
-          <div class="capture-title">Mode capture</div>
-          <div class="capture-help">Centrez votre visage dans l'ovale</div>
+          <div class="capture-debug" id="captureDebug" hidden>Debug flux</div>
         </div>
         <div class="capture-status">
           <div class="capture-status-main" id="captureStatusMain">Preparation de la reconnaissance...</div>
@@ -434,7 +438,6 @@ _UI_HTML = """\
         <div class="result-greeting" id="resultGreeting">Traitement en cours...</div>
         <div class="result-kind" id="resultKind">--</div>
         <div class="result-meta" id="resultMeta">--</div>
-        <div class="result-next">Retour automatique au mode standard</div>
       </div>
     </section>
   </div>
@@ -447,9 +450,9 @@ _UI_HTML = """\
     var viewResult = document.getElementById("viewResult");
     var clockTime = document.getElementById("clockTime");
     var weatherLabel = document.getElementById("weatherLabel");
-    var stdFooter = document.getElementById("stdFooter");
     var captureStatusMain = document.getElementById("captureStatusMain");
     var captureStatusSub = document.getElementById("captureStatusSub");
+    var captureDebug = document.getElementById("captureDebug");
     var resultCard = document.getElementById("resultCard");
     var resultTag = document.getElementById("resultTag");
     var resultGreeting = document.getElementById("resultGreeting");
@@ -460,6 +463,8 @@ _UI_HTML = """\
     var CAMERA_MIRROR = "__CAMERA_MIRROR__" === "true";
     var POINTAGE_TRIGGER_MODE = "__POINTAGE_TRIGGER_MODE__";
     var ULTRASON_DISTANCE_CM = parseFloat("__ULTRASON_DISTANCE_CM__") || 80;
+    var ULTRASON_CAPTURE_PREP_DELAY_MS = parseInt("__ULTRASON_CAPTURE_PREP_DELAY_MS__", 10);
+    var ULTRASON_PRESENCE_COOLDOWN_MS = parseInt("__ULTRASON_PRESENCE_COOLDOWN_MS__", 10);
     var MANUAL_TRIGGER_ENABLED = POINTAGE_TRIGGER_MODE === "space";
     var AUTO_TRIGGER_ENABLED = !MANUAL_TRIGGER_ENABLED;
 
@@ -477,12 +482,16 @@ _UI_HTML = """\
     }
 
     var SHOW_BOXES = getQueryParam("boxes") === "1";
+    var SHOW_DEBUG = getQueryParam("debug") === "1";
 
     var streamRunning = false;
     var streamTimer = null;
     var recognitionInProgress = false;
     var resultTimer = null;
     var CAPTURE_PREP_DELAY_MS = 1800;
+    if (POINTAGE_TRIGGER_MODE === "ultrason" && !isNaN(ULTRASON_CAPTURE_PREP_DELAY_MS) && ULTRASON_CAPTURE_PREP_DELAY_MS >= 0) {
+      CAPTURE_PREP_DELAY_MS = ULTRASON_CAPTURE_PREP_DELAY_MS;
+    }
 
     function setMode(mode) {
       viewStandard.classList.toggle("active", mode === "standard");
@@ -496,25 +505,29 @@ _UI_HTML = """\
       scanOval.className = "scan-oval" + (mood ? " " + mood : "");
     }
 
-    function updateTriggerFooterText() {
-      if (!stdFooter) return;
-      if (MANUAL_TRIGGER_ENABLED) {
-        stdFooter.innerHTML = "Appuyez sur Espace pour lancer la capture";
-        return;
-      }
-      if (POINTAGE_TRIGGER_MODE === "ultrason") {
-        stdFooter.textContent = "Mode ultrason actif: declenchement automatique sous " + Math.round(ULTRASON_DISTANCE_CM) + " cm";
-        return;
-      }
-      stdFooter.textContent = "Mode PIR actif: declenchement automatique sur detection de presence";
-    }
-
     function scheduleNextFrame(delay) {
       if (!streamRunning) return;
       clearTimeout(streamTimer);
       streamTimer = setTimeout(function() {
         feed.src = "/snapshot?boxes=" + (SHOW_BOXES ? "1" : "0") + "&t=" + Date.now();
       }, delay);
+    }
+
+    function updateCaptureDebug() {
+      if (!SHOW_DEBUG || !captureDebug || !feed) return;
+
+      var camW = feed.naturalWidth || 0;
+      var camH = feed.naturalHeight || 0;
+      var viewW = feed.clientWidth || window.innerWidth || 0;
+      var viewH = feed.clientHeight || window.innerHeight || 0;
+
+      var camRatio = camW > 0 && camH > 0 ? (camW / camH).toFixed(3) : "n/a";
+      var viewRatio = viewW > 0 && viewH > 0 ? (viewW / viewH).toFixed(3) : "n/a";
+
+      captureDebug.textContent =
+        "cam: " + camW + "x" + camH + " (r=" + camRatio + ") | " +
+        "zone: " + viewW + "x" + viewH + " (r=" + viewRatio + ") | " +
+        "fit: contain (no crop)";
     }
 
     function startStream() {
@@ -529,8 +542,12 @@ _UI_HTML = """\
       streamTimer = null;
     }
 
-    feed.addEventListener("load", function() { scheduleNextFrame(90); });
+    feed.addEventListener("load", function() {
+      updateCaptureDebug();
+      scheduleNextFrame(90);
+    });
     feed.addEventListener("error", function() { scheduleNextFrame(180); });
+    window.addEventListener("resize", updateCaptureDebug);
 
     var _DAYS = ["Dimanche", "Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi"];
     var _MONTHS = ["janvier", "fevrier", "mars", "avril", "mai", "juin", "juillet", "aout", "septembre", "octobre", "novembre", "decembre"];
@@ -549,7 +566,7 @@ _UI_HTML = """\
       try {
         var now = new Date();
         if (clockTime) {
-          clockTime.textContent = _fmtDateEuroLong(now) + " | " + _fmtTime(now);
+          clockTime.textContent = _fmtDateEuroLong(now) + "\\n" + _fmtTime(now);
         }
       } catch(e) {}
     }
@@ -614,37 +631,60 @@ _UI_HTML = """\
       }
     }
 
-    function fetchWeatherFor(lat, lon, onSuccess, onError) {
-      var url = "https://api.open-meteo.com/v1/forecast?latitude=" + lat + "&longitude=" + lon + "&current=temperature_2m&timezone=auto";
+    var FALLBACK_WEATHER_CITY = "Mons";
+    var FALLBACK_WEATHER_LAT = 50.4542;
+    var FALLBACK_WEATHER_LON = 3.9523;
+
+    function _weatherIconFromCode(code) {
+      // Codes meteo Open-Meteo: https://open-meteo.com/en/docs
+      if (typeof code !== "number") return "\u2601";
+      if (code === 0) return "\u2600"; // ciel degage
+      if (code === 1 || code === 2) return "\u26c5"; // peu nuageux
+      if (code === 3) return "\u2601"; // couvert
+      if (code === 45 || code === 48) return "\u2601"; // brouillard
+      if (code === 51 || code === 53 || code === 55 || code === 56 || code === 57) return "\u2614"; // bruine
+      if (code === 61 || code === 63 || code === 65 || code === 66 || code === 67 || code === 80 || code === 81 || code === 82) return "\u2614"; // pluie
+      if (code === 71 || code === 73 || code === 75 || code === 77 || code === 85 || code === 86) return "\u2744"; // neige
+      if (code === 95 || code === 96 || code === 99) return "\u26a1"; // orage
+      return "\u2601";
+    }
+
+    function fetchWeatherFor(lat, lon, sourceName, onSuccess, onError) {
+      var url = "https://api.open-meteo.com/v1/forecast?latitude=" + lat + "&longitude=" + lon + "&current=temperature_2m,weather_code&timezone=auto";
       _jsonGet(url, function(data) {
         if (!data.current || typeof data.current.temperature_2m !== "number") {
           onError(new Error("meteo"));
           return;
         }
-        if (weatherLabel) weatherLabel.textContent = Math.round(data.current.temperature_2m) + "\u00b0C";
+        var weatherCode = typeof data.current.weather_code === "number" ? data.current.weather_code : null;
+        var weatherIcon = _weatherIconFromCode(weatherCode);
+        if (weatherLabel) {
+          weatherLabel.textContent = weatherIcon + " " + Math.round(data.current.temperature_2m) + "\u00b0C";
+          if (sourceName) weatherLabel.title = sourceName;
+        }
         onSuccess();
       }, onError);
     }
 
     function updateWeather() {
       if (!("geolocation" in navigator)) {
-        fetchWeatherFor(3.8480, 11.5021, function() {}, function() {
+        fetchWeatherFor(FALLBACK_WEATHER_LAT, FALLBACK_WEATHER_LON, FALLBACK_WEATHER_CITY, function() {}, function() {
           if (weatherLabel) weatherLabel.textContent = "Meteo indisponible";
         });
         return;
       }
       try {
         navigator.geolocation.getCurrentPosition(function(pos) {
-          fetchWeatherFor(pos.coords.latitude, pos.coords.longitude, function() {}, function() {
+          fetchWeatherFor(pos.coords.latitude, pos.coords.longitude, "Position actuelle", function() {}, function() {
             if (weatherLabel) weatherLabel.textContent = "Meteo indisponible";
           });
         }, function() {
-          fetchWeatherFor(3.8480, 11.5021, function() {}, function() {
+          fetchWeatherFor(FALLBACK_WEATHER_LAT, FALLBACK_WEATHER_LON, FALLBACK_WEATHER_CITY, function() {}, function() {
             if (weatherLabel) weatherLabel.textContent = "Meteo indisponible";
           });
         }, { timeout: 7000, maximumAge: 600000 });
       } catch (e) {
-        fetchWeatherFor(3.8480, 11.5021, function() {}, function() {
+        fetchWeatherFor(FALLBACK_WEATHER_LAT, FALLBACK_WEATHER_LON, FALLBACK_WEATHER_CITY, function() {}, function() {
           if (weatherLabel) weatherLabel.textContent = "Meteo indisponible";
         });
       }
@@ -682,7 +722,6 @@ _UI_HTML = """\
         recognitionInProgress = false;
         setMode("standard");
         setCaptureStatus("Preparation de la reconnaissance...", "Ne bougez pas pendant la lecture", "");
-        updateTriggerFooterText();
       }, 4200);
     }
 
@@ -753,7 +792,6 @@ _UI_HTML = """\
     document.body.addEventListener("click", function() { document.body.focus(); });
 
     if (KIOSK_MODE && MANUAL_TRIGGER_ENABLED) {
-      stdFooter.innerHTML = "Mode kiosk actif \u2014 appuyez sur Espace pour capturer";
       document.addEventListener("pointerdown", function() {
         enterFullscreen();
       }, false);
@@ -761,12 +799,20 @@ _UI_HTML = """\
 
     if (CAMERA_MIRROR) feed.style.transform = "scaleX(-1)";
 
+    if (SHOW_DEBUG && captureDebug) {
+      captureDebug.hidden = false;
+      updateCaptureDebug();
+      setInterval(updateCaptureDebug, 1000);
+    }
+
     // ── Polling capteur de presence (PIR / ultrason) ───────────────────────
     if (AUTO_TRIGGER_ENABLED) {
       var _presenceLastDetected = false;
       var _presenceCooldownUntil = 0;
       var PRESENCE_POLL_INTERVAL_MS = 400;
-      var PRESENCE_COOLDOWN_MS = 8000;
+      var PRESENCE_COOLDOWN_MS = !isNaN(ULTRASON_PRESENCE_COOLDOWN_MS) && ULTRASON_PRESENCE_COOLDOWN_MS >= 0
+        ? ULTRASON_PRESENCE_COOLDOWN_MS
+        : 8000;
 
       function _presencePoll() {
         if (recognitionInProgress) return;
@@ -793,8 +839,6 @@ _UI_HTML = """\
       setInterval(_presencePoll, PRESENCE_POLL_INTERVAL_MS);
     }
     // ─────────────────────────────────────────────────────────────────────────
-
-    updateTriggerFooterText();
 
     updateClock();
     setInterval(updateClock, 1000);
@@ -951,7 +995,6 @@ def create_app() -> Flask:
 
     def _is_reliable_face_result(face_result: dict, frame_w: int, frame_h: int) -> bool:
         primary = face_result.get("primary_face") or {}
-        guard = face_result.get("guard") or {}
 
         w = int(primary.get("w", 0))
         h = int(primary.get("h", 0))
@@ -961,11 +1004,8 @@ def create_app() -> Flask:
         if w < 72 or h < 72:
             return False
 
-        if int(guard.get("centered_candidates", 0)) <= 0:
-            return False
-
-        margin_x = max(2, int(frame_w * 0.02))
-        margin_y = max(2, int(frame_h * 0.02))
+        margin_x = max(2, int(frame_w * 0.01))
+        margin_y = max(2, int(frame_h * 0.01))
         if x <= margin_x or y <= margin_y or (x + w) >= (frame_w - margin_x) or (y + h) >= (frame_h - margin_y):
             return False
 
@@ -977,17 +1017,9 @@ def create_app() -> Flask:
         if not _point_in_oval(face_cx, face_cy, cx, cy, rx, ry):
             return False
 
-        # Le rectangle visage doit rester dans la boîte englobante de l'ovale.
-        oval_left = cx - rx
-        oval_right = cx + rx
-        oval_top = cy - ry
-        oval_bottom = cy + ry
-        if x < oval_left or y < oval_top or (x + w) > oval_right or (y + h) > oval_bottom:
-          return False
-
         return True
 
-    def _capture_with_face(max_attempts: int = 6, delay_ms: int = 70) -> dict:
+    def _capture_with_face(max_attempts: int = 8, delay_ms: int = 70) -> dict:
         last_capture: dict | None = None
         last_face: dict | None = None
         pending_bbox: dict | None = None
@@ -1015,7 +1047,7 @@ def create_app() -> Flask:
                             last_face = face_result
                         else:
                             iou = _bbox_iou(pending_bbox, current_bbox)
-                            if iou >= 0.18:
+                            if iou >= 0.10:
                                 return {
                                     "ok": True,
                                     "frame": frame,
@@ -1193,6 +1225,8 @@ def create_app() -> Flask:
         html = html.replace("__CAMERA_MIRROR__", "true" if settings.camera_mirror else "false")
         html = html.replace("__POINTAGE_TRIGGER_MODE__", settings.pointage_trigger_mode)
         html = html.replace("__ULTRASON_DISTANCE_CM__", str(settings.ultrason_distance_cm))
+        html = html.replace("__ULTRASON_CAPTURE_PREP_DELAY_MS__", str(settings.ultrason_capture_prep_delay_ms))
+        html = html.replace("__ULTRASON_PRESENCE_COOLDOWN_MS__", str(settings.ultrason_presence_cooldown_ms))
         return html, 200, {"Content-Type": "text/html; charset=utf-8"}
 
     @app.get("/assets/logo-projet")
@@ -1292,7 +1326,9 @@ def create_app() -> Flask:
     def snapshot() -> object:
         capture_result = capture_frame_fast(settings)
         if not capture_result["ok"]:
-            return ("", 503)
+            capture_result = capture_frame(settings)
+            if not capture_result.get("ok", False):
+                return jsonify(capture_result), 503
         frame = capture_result["frame"]
 
         show_boxes = request.args.get("boxes", "0") == "1"

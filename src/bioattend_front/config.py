@@ -60,6 +60,7 @@ class Settings:
     liveness_live_class_idx: int
     camera_width: int
     camera_height: int
+    camera_full_fov: bool
     camera_device: str
     camera_source: str
     camera_backend: str
@@ -73,6 +74,8 @@ class Settings:
     api_token: str
     api_timeout_seconds: int
     pointage_trigger_mode: str
+    ultrason_capture_prep_delay_ms: int
+    ultrason_presence_cooldown_ms: int
     gpio_pir: int
     gpio_ultrason_trigger: int
     gpio_ultrason_echo: int
@@ -96,6 +99,7 @@ class Settings:
             liveness_live_class_idx=_to_int(os.getenv("LIVENESS_LIVE_CLASS_IDX"), default=1),
             camera_width=_to_int(os.getenv("CAMERA_WIDTH"), default=1280),
             camera_height=_to_int(os.getenv("CAMERA_HEIGHT"), default=720),
+            camera_full_fov=_to_bool(os.getenv("CAMERA_FULL_FOV"), default=True),
             camera_device=os.getenv("CAMERA_DEVICE", "0"),
             camera_source=os.getenv("CAMERA_SOURCE", "auto").strip().lower(),
             camera_backend=os.getenv("CAMERA_BACKEND", "auto").strip().lower(),
@@ -112,6 +116,14 @@ class Settings:
             api_token=os.getenv("API_TOKEN", "").strip(),
             api_timeout_seconds=_to_int(os.getenv("API_TIMEOUT_SECONDS"), default=8),
             pointage_trigger_mode=_normalize_trigger_mode(os.getenv("POINTAGE_TRIGGER_MODE")),
+            ultrason_capture_prep_delay_ms=max(
+                0,
+                _to_int(os.getenv("ULTRASON_CAPTURE_PREP_DELAY_MS"), default=2600),
+            ),
+            ultrason_presence_cooldown_ms=max(
+                0,
+                _to_int(os.getenv("ULTRASON_PRESENCE_COOLDOWN_MS"), default=8000),
+            ),
             gpio_pir=_to_int(os.getenv("GPIO_PIR"), default=17),
             gpio_ultrason_trigger=_to_int(os.getenv("GPIO_ULTRASON_TRIGGER"), default=18),
             gpio_ultrason_echo=_to_int(os.getenv("GPIO_ULTRASON_ECHO"), default=24),
