@@ -1497,6 +1497,16 @@ def create_app() -> Flask:
       embedding_vector = embedding_result.pop("embedding")
       api_result = identify_embedding(embedding_vector, settings)
       api_response = api_result.get("response", {})
+      app.logger.info(
+        "[pointage] identify result target=%s status=%s ok=%s matched=%s full_name=%s pointage_type=%s payload=%s",
+        api_result.get("target"),
+        api_result.get("status_code"),
+        api_result.get("ok"),
+        api_response.get("matched"),
+        api_response.get("full_name"),
+        api_response.get("pointage_type"),
+        api_response,
+      )
       if api_result.get("ok") and api_response.get("matched"):
         return jsonify({
           "ok": True,
@@ -1513,6 +1523,14 @@ def create_app() -> Flask:
         }), 200
 
       event_type = "unknown_user" if api_result.get("status_code") in {401, 404} else "recognition_failed"
+      app.logger.warning(
+        "[pointage] identify rejected event_type=%s status=%s ok=%s matched=%s error=%s",
+        event_type,
+        api_result.get("status_code"),
+        api_result.get("ok"),
+        api_response.get("matched"),
+        api_response.get("error"),
+      )
       event_type, event_result = _emit_platform_event(
         event_type,
         status="rejected",
