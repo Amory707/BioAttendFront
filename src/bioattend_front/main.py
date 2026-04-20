@@ -387,6 +387,7 @@ _UI_HTML = """\
       color: rgba(255, 255, 255, 0.45);
       font-size: clamp(1.3rem, 2.6vw, 1.95rem);
       line-height: 1.35;
+      white-space: pre-line;
     }
 
     @media (max-width: 560px) {
@@ -562,6 +563,91 @@ _UI_HTML = """\
       return _DAYS[d.getDay()] + " " + _pad(d.getDate()) + " " + _MONTHS[d.getMonth()] + " " + d.getFullYear();
     }
 
+    function _isObj(v) {
+      return !!v && typeof v === "object" && !Array.isArray(v);
+    }
+
+    function _firstDefinedFrom(obj, keys) {
+      if (!_isObj(obj)) return null;
+      for (var i = 0; i < keys.length; i++) {
+        var k = keys[i];
+        if (Object.prototype.hasOwnProperty.call(obj, k) && obj[k] !== null && obj[k] !== undefined) {
+          return obj[k];
+        }
+      }
+      return null;
+    }
+
+    function _resolveValue(data, keys) {
+      var sources = [
+        data,
+        data && data.metrics,
+        data && data.attendance,
+        data && data.summary,
+        data && data.api_payload,
+        data && data.api_payload && data.api_payload.metrics,
+        data && data.api_payload && data.api_payload.attendance,
+        data && data.api_payload && data.api_payload.summary,
+      ];
+      for (var i = 0; i < sources.length; i++) {
+        var val = _firstDefinedFrom(sources[i], keys);
+        if (val !== null && val !== undefined) return val;
+      }
+      return null;
+    }
+
+    function _toFiniteNumber(v) {
+      if (typeof v === "number" && isFinite(v)) return v;
+      if (typeof v === "string") {
+        var trimmed = v.trim().replace(",", ".");
+        if (!trimmed) return null;
+        var n = Number(trimmed);
+        if (isFinite(n)) return n;
+      }
+      return null;
+    }
+
+    function _parseDurationToMinutes(v) {
+      var asNum = _toFiniteNumber(v);
+      if (asNum !== null) return asNum;
+      if (typeof v !== "string") return null;
+      var raw = v.trim();
+      if (!raw) return null;
+
+      var hhmmss = raw.match(/^(\d{1,3}):(\d{1,2})(?::(\d{1,2}))?$/);
+      if (hhmmss) {
+        var h = Number(hhmmss[1]) || 0;
+        var m = Number(hhmmss[2]) || 0;
+        var s = Number(hhmmss[3] || 0) || 0;
+        return (h * 60) + m + (s / 60);
+      }
+      return null;
+    }
+
+    function _formatMinutes(v) {
+      var mins = _parseDurationToMinutes(v);
+      if (mins === null) return null;
+      var sign = mins < 0 ? "-" : "";
+      var absMins = Math.round(Math.abs(mins));
+      var h = Math.floor(absMins / 60);
+      var m = absMins % 60;
+      if (h > 0) return sign + h + "h " + _pad(m) + "min";
+      return sign + m + " min";
+    }
+
+    function _formatClockLike(v) {
+      if (typeof v === "string" && /^\d{1,2}:\d{2}(:\d{2})?$/.test(v.trim())) {
+        var parts = v.trim().split(":");
+        var hh = _pad(Number(parts[0]) || 0);
+        var mm = _pad(Number(parts[1]) || 0);
+        var ss = parts.length > 2 ? _pad(Number(parts[2]) || 0) : "00";
+        return hh + ":" + mm + ":" + ss;
+      }
+      var d = new Date(v);
+      if (!isNaN(d.getTime())) return _fmtTime(d);
+      return null;
+    }
+
     function updateClock() {
       try {
         var now = new Date();
@@ -692,12 +778,73 @@ _UI_HTML = """\
 
     function showResultSuccess(data) {
       var type = data.pointage_type === "ENTREE" ? "ENTREE" : "SORTIE";
+      var pointageWhenRaw = _resolveValue(data, [
+        "pointage_datetime",
+        "pointage_time",
+        "pointage_at",
+        "timestamp",
+        "created_at",
+        "heure_pointage",
+        "time",
+      ]);
+      var pointageClock = _formatClockLike(pointageWhenRaw);
+      var pointageDate = null;
+      var parsedPointageDate = new Date(pointageWhenRaw);
+      if (!isNaN(parsedPointageDate.getTime())) pointageDate = parsedPointageDate;
       var now = new Date();
+      var effectiveDate = pointageDate || now;
+
+      var workedRaw = _resolveValue(data, [
+        "temps_travail_effectif",
+        "temps_effectif",
+        "worked_duration",
+        "worked_time",
+        "work_duration",
+        "effective_work_duration",
+        "worked_duration_minutes",
+        "effective_work_minutes",
+        "total_work_minutes",
+      ]);
+      var delayRaw = _resolveValue(data, [
+        "retard",
+        "retard_minutes",
+        "delay_minutes",
+        "late_minutes",
+        "minutes_late",
+      ]);
+      var earlyRaw = _resolveValue(data, [
+        "depart_anticipe",
+        "depart_anticipe_minutes",
+        "early_departure_minutes",
+        "minutes_early_departure",
+      ]);
+
+      var lines = [
+        "Heure: " + (pointageClock || _fmtTime(effectiveDate)),
+        "Date: " + _fmtDateEuroLong(effectiveDate),
+      ];
+
+      if (type === "SORTIE") {
+        var workedDisplay = _formatMinutes(workedRaw);
+        if (!workedDisplay && typeof workedRaw === "string" && workedRaw.trim()) workedDisplay = workedRaw.trim();
+        if (workedDisplay) lines.push("Temps effectif: " + workedDisplay);
+      }
+
+      var delayMins = _parseDurationToMinutes(delayRaw);
+      if (delayMins !== null) {
+        lines.push(delayMins > 0 ? ("Retard: " + _formatMinutes(delayMins)) : "Retard: aucun");
+      }
+
+      var earlyMins = _parseDurationToMinutes(earlyRaw);
+      if (earlyMins !== null) {
+        lines.push(earlyMins > 0 ? ("Depart anticipe: " + _formatMinutes(earlyMins)) : "Depart anticipe: aucun");
+      }
+
       resultCard.className = "result-card success";
       resultTag.textContent = "Pointage valide";
       resultGreeting.textContent = "Bonjour " + data.full_name;
       resultKind.textContent = type;
-      resultMeta.textContent = "Heure: " + _fmtTime(now) + " | Date: " + _fmtDateEuroLong(now);
+      resultMeta.textContent = lines.join("\n");
     }
 
     
@@ -1514,6 +1661,9 @@ def create_app() -> Flask:
           "full_name": api_response.get("full_name"),
           "pointage_type": api_response.get("pointage_type"),
           "pointage_id": api_response.get("pointage_id"),
+          "pointage_time": api_response.get("pointage_time"),
+          "pointage_datetime": api_response.get("pointage_datetime") or api_response.get("pointage_at") or api_response.get("created_at"),
+          "api_payload": api_response,
           "liveness": {
             "enabled": bool(settings.liveness_enabled),
             "is_live": None if liveness_result is None else liveness_result.get("is_live"),
