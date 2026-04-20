@@ -390,6 +390,43 @@ _UI_HTML = """\
       white-space: pre-line;
     }
 
+    .result-schedule {
+      display: grid;
+      gap: 12px;
+      justify-items: center;
+      margin-top: 4px;
+    }
+
+    .result-flags {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: 10px;
+    }
+
+    .result-flag {
+      border-radius: 999px;
+      padding: 8px 16px;
+      border: 1px solid rgba(255, 255, 255, 0.18);
+      background: rgba(255, 255, 255, 0.06);
+      color: rgba(255, 255, 255, 0.82);
+      font-size: clamp(0.82rem, 1.7vw, 1rem);
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .result-flag.warning {
+      border-color: rgba(255, 196, 87, 0.36);
+      background: rgba(255, 196, 87, 0.14);
+      color: #ffd36f;
+    }
+
+    .result-feedback {
+      color: rgba(255, 255, 255, 0.74);
+      font-size: clamp(1rem, 2vw, 1.18rem);
+      line-height: 1.45;
+    }
+
     @media (max-width: 560px) {
       .view-standard { padding: 14px 16px; }
       .capture-overlay { flex-direction: column; align-items: flex-start; gap: 6px; }
@@ -439,6 +476,7 @@ _UI_HTML = """\
         <div class="result-greeting" id="resultGreeting">Traitement en cours...</div>
         <div class="result-kind" id="resultKind">--</div>
         <div class="result-meta" id="resultMeta">--</div>
+        <div class="result-schedule" id="resultSchedule" hidden></div>
       </div>
     </section>
   </div>
@@ -459,6 +497,7 @@ _UI_HTML = """\
     var resultGreeting = document.getElementById("resultGreeting");
     var resultKind = document.getElementById("resultKind");
     var resultMeta = document.getElementById("resultMeta");
+    var resultSchedule = document.getElementById("resultSchedule");
 
     var KIOSK_MODE = "__KIOSK_MODE__" === "true";
     var CAMERA_MIRROR = "__CAMERA_MIRROR__" === "true";
@@ -561,175 +600,6 @@ _UI_HTML = """\
 
     function _fmtDateEuroLong(d) {
       return _DAYS[d.getDay()] + " " + _pad(d.getDate()) + " " + _MONTHS[d.getMonth()] + " " + d.getFullYear();
-    }
-
-    function _isObj(v) {
-      return !!v && typeof v === "object" && !Array.isArray(v);
-    }
-
-    function _firstDefinedFrom(obj, keys) {
-      if (!_isObj(obj)) return null;
-      for (var i = 0; i < keys.length; i++) {
-        var k = keys[i];
-        if (Object.prototype.hasOwnProperty.call(obj, k) && obj[k] !== null && obj[k] !== undefined) {
-          return obj[k];
-        }
-      }
-      return null;
-    }
-
-    function _resolveValue(data, keys) {
-      var sources = [
-        data,
-        data && data.pointage,
-        data && data.result,
-        data && data.metrics,
-        data && data.attendance,
-        data && data.summary,
-        data && data.api_payload,
-        data && data.api_payload && data.api_payload.pointage,
-        data && data.api_payload && data.api_payload.result,
-        data && data.api_payload && data.api_payload.metrics,
-        data && data.api_payload && data.api_payload.attendance,
-        data && data.api_payload && data.api_payload.summary,
-      ];
-      for (var i = 0; i < sources.length; i++) {
-        var val = _firstDefinedFrom(sources[i], keys);
-        if (val !== null && val !== undefined) return val;
-      }
-      return null;
-    }
-
-    function _toFiniteNumber(v) {
-      if (typeof v === "number" && isFinite(v)) return v;
-      if (typeof v === "string") {
-        var trimmed = v.trim().replace(",", ".");
-        if (!trimmed) return null;
-        var n = Number(trimmed);
-        if (isFinite(n)) return n;
-      }
-      return null;
-    }
-
-    function _parseDurationToMinutes(v) {
-      var asNum = _toFiniteNumber(v);
-      if (asNum !== null) return asNum;
-      if (typeof v !== "string") return null;
-      var raw = v.trim();
-      if (!raw) return null;
-
-      var normalized = raw.toLowerCase().replace(/,/g, ".");
-
-      var hourMinuteText = normalized.match(/^(\d+(?:\.\d+)?)\s*h(?:\s*(\d+(?:\.\d+)?)\s*min)?$/);
-      if (hourMinuteText) {
-        var textH = Number(hourMinuteText[1]) || 0;
-        var textM = Number(hourMinuteText[2] || 0) || 0;
-        return (textH * 60) + textM;
-      }
-
-      var minuteText = normalized.match(/^(\d+(?:\.\d+)?)\s*min$/);
-      if (minuteText) {
-        return Number(minuteText[1]) || 0;
-      }
-
-      var hhmmss = raw.match(/^(\d{1,3}):(\d{1,2})(?::(\d{1,2}))?$/);
-      if (hhmmss) {
-        var h = Number(hhmmss[1]) || 0;
-        var m = Number(hhmmss[2]) || 0;
-        var s = Number(hhmmss[3] || 0) || 0;
-        return (h * 60) + m + (s / 60);
-      }
-      return null;
-    }
-
-    function _formatMinutes(v) {
-      var mins = _parseDurationToMinutes(v);
-      if (mins === null) return null;
-      var sign = mins < 0 ? "-" : "";
-      var absMins = Math.round(Math.abs(mins));
-      var h = Math.floor(absMins / 60);
-      var m = absMins % 60;
-      if (h > 0) return sign + h + "h " + _pad(m) + "min";
-      return sign + m + " min";
-    }
-
-    function _formatClockLike(v) {
-      if (typeof v === "string" && /^\d{1,2}:\d{2}(:\d{2})?$/.test(v.trim())) {
-        var parts = v.trim().split(":");
-        var hh = _pad(Number(parts[0]) || 0);
-        var mm = _pad(Number(parts[1]) || 0);
-        var ss = parts.length > 2 ? _pad(Number(parts[2]) || 0) : "00";
-        return hh + ":" + mm + ":" + ss;
-      }
-      var d = new Date(v);
-      if (!isNaN(d.getTime())) return _fmtTime(d);
-      return null;
-    }
-
-    function _parseEpochLike(value) {
-      var n = _toFiniteNumber(value);
-      if (n === null || n <= 0) return null;
-      var intN = Math.floor(n);
-      if (intN > 1000000000000) return new Date(intN); // deja en ms
-      if (intN > 1000000000) return new Date(intN * 1000); // secondes unix
-      return null;
-    }
-
-    function _parseBackendDateTime(v) {
-      if (v === null || v === undefined) return null;
-
-      if (typeof v === "number") {
-        var fromNumber = _parseEpochLike(v);
-        return fromNumber && !isNaN(fromNumber.getTime()) ? fromNumber : null;
-      }
-
-      if (typeof v === "string") {
-        var raw = v.trim();
-        if (!raw || raw === "0" || raw.toLowerCase() === "null" || raw.toLowerCase() === "none") return null;
-
-        if (/^\d+$/.test(raw)) {
-          var fromDigits = _parseEpochLike(Number(raw));
-          return fromDigits && !isNaN(fromDigits.getTime()) ? fromDigits : null;
-        }
-
-        if (/^\d{1,2}:\d{2}(:\d{2})?$/.test(raw)) {
-          return null;
-        }
-
-        var parsed = new Date(raw);
-        if (!isNaN(parsed.getTime())) return parsed;
-      }
-
-      return null;
-    }
-
-    function _formatDateFromRaw(v) {
-      if (typeof v === "string") {
-        var raw = v.trim();
-        if (raw) {
-          var isoDate = raw.match(/^(\d{4})-(\d{2})-(\d{2})/);
-          if (isoDate) {
-            var y = Number(isoDate[1]);
-            var m = Number(isoDate[2]) - 1;
-            var d = Number(isoDate[3]);
-            var noTzDate = new Date(y, m, d, 12, 0, 0);
-            return _fmtDateEuroLong(noTzDate);
-          }
-
-          var frDate = raw.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
-          if (frDate) {
-            var dFr = Number(frDate[1]);
-            var mFr = Number(frDate[2]) - 1;
-            var yFr = Number(frDate[3]);
-            var frAsDate = new Date(yFr, mFr, dFr, 12, 0, 0);
-            return _fmtDateEuroLong(frAsDate);
-          }
-        }
-      }
-
-      var parsed = new Date(v);
-      if (!isNaN(parsed.getTime())) return _fmtDateEuroLong(parsed);
-      return null;
     }
 
     function updateClock() {
@@ -862,106 +732,66 @@ _UI_HTML = """\
 
     function showResultSuccess(data) {
       var type = data.pointage_type === "ENTREE" ? "ENTREE" : "SORTIE";
-      var pointageTimeRaw = _resolveValue(data, [
-        "pointage_time",
-        "heure_pointage",
-        "time_pointage",
-      ]);
-      var pointageDateTimeRaw = _resolveValue(data, [
-        "pointage_datetime",
-        "pointage_at",
-        "timestamp",
-        "created_at",
-        "pointed_at",
-      ]);
-      var pointageDateRaw = _resolveValue(data, [
-        "pointage_date",
-        "date_pointage",
-        "work_date",
-        "attendance_date",
-      ]);
-      var pointageClock = _formatClockLike(pointageTimeRaw) || _formatClockLike(pointageDateTimeRaw);
-      var parsedPointageDate = _parseBackendDateTime(pointageDateTimeRaw);
-      var pointageDateLabel = _formatDateFromRaw(pointageDateRaw || parsedPointageDate);
       var now = new Date();
-      var effectiveDate = parsedPointageDate || now;
-
-      var workedRaw = _resolveValue(data, [
-        "temps_travail_effectif",
-        "temps_effectif",
-        "worked_duration",
-        "worked_time",
-        "work_duration",
-        "effective_work_duration",
-        "worked_duration_minutes",
-        "effective_work_minutes",
-        "total_work_minutes",
-        "duree_travail",
-        "duree_travail_effective",
-        "work_time",
-        "work_time_display",
-        "worked_hours",
-        "effective_duration",
-      ]);
-      var delayRaw = _resolveValue(data, [
-        "retard",
-        "retard_minutes",
-        "delay_minutes",
-        "late_minutes",
-        "minutes_late",
-        "late_duration",
-        "retard_display",
-        "late_time",
-        "lateness",
-      ]);
-      var earlyRaw = _resolveValue(data, [
-        "depart_anticipe",
-        "depart_anticipe_minutes",
-        "early_departure_minutes",
-        "minutes_early_departure",
-        "early_departure_duration",
-        "depart_anticipe_display",
-        "early_leave",
-        "early_leave_duration",
-      ]);
-
-      var lines = [
-        "Heure: " + (pointageClock || _fmtTime(effectiveDate)),
-        "Date: " + (pointageDateLabel || _fmtDateEuroLong(effectiveDate)),
+      var metaLines = [
+        "Heure: " + _fmtTime(now),
+        "Date: " + _fmtDateEuroLong(now)
       ];
 
-      if (type === "SORTIE") {
-        var workedDisplay = _formatMinutes(workedRaw);
-        if (!workedDisplay && typeof workedRaw === "string" && workedRaw.trim()) workedDisplay = workedRaw.trim();
-        lines.push("Temps effectif: " + (workedDisplay || "indisponible"));
-      }
-
-      var delayMins = _parseDurationToMinutes(delayRaw);
-      if (delayMins !== null) {
-        lines.push(delayMins > 0 ? ("Retard: " + _formatMinutes(delayMins)) : "Retard: aucun");
-      } else if (typeof delayRaw === "string" && delayRaw.trim()) {
-        lines.push("Retard: " + delayRaw.trim());
-      } else {
-        lines.push("Retard: indisponible");
-      }
-
-      var earlyMins = _parseDurationToMinutes(earlyRaw);
-      if (earlyMins !== null) {
-        lines.push(earlyMins > 0 ? ("Depart anticipe: " + _formatMinutes(earlyMins)) : "Depart anticipe: aucun");
-      } else if (typeof earlyRaw === "string" && earlyRaw.trim()) {
-        lines.push("Depart anticipe: " + earlyRaw.trim());
-      } else {
-        lines.push("Depart anticipe: indisponible");
+      if (type === "SORTIE" && data.worked_duration_display) {
+        metaLines.push("Temps effectif: " + data.worked_duration_display);
       }
 
       resultCard.className = "result-card success";
       resultTag.textContent = "Pointage valide";
       resultGreeting.textContent = "Bonjour " + data.full_name;
       resultKind.textContent = type;
-      resultMeta.textContent = lines.join("\\n");
+      resultMeta.textContent = metaLines.join("\n");
+      renderScheduleDetails(data);
     }
 
-    
+    function _scheduleFlagLabel(flag) {
+      var labels = {
+        "RETARD": "Retard",
+        "DEPART_ANTICIPE": "Depart anticipe",
+        "JOURNEE_COURTE": "Journee courte"
+      };
+      return labels[flag] || flag;
+    }
+
+    function renderScheduleDetails(data) {
+      var flags = Array.isArray(data.schedule_flags) ? data.schedule_flags.filter(Boolean) : [];
+      var feedback = Array.isArray(data.schedule_feedback) ? data.schedule_feedback.filter(Boolean) : [];
+
+      resultSchedule.innerHTML = "";
+      resultSchedule.hidden = true;
+
+      if (!flags.length && !feedback.length) {
+        return;
+      }
+
+      if (flags.length) {
+        var flagsWrap = document.createElement("div");
+        flagsWrap.className = "result-flags";
+        flags.forEach(function(flag) {
+          var badge = document.createElement("span");
+          badge.className = "result-flag" + (flag === "RETARD" || flag === "DEPART_ANTICIPE" || flag === "JOURNEE_COURTE" ? " warning" : "");
+          badge.textContent = _scheduleFlagLabel(flag);
+          flagsWrap.appendChild(badge);
+        });
+        resultSchedule.appendChild(flagsWrap);
+      }
+
+      if (feedback.length) {
+        var feedbackNode = document.createElement("div");
+        feedbackNode.className = "result-feedback";
+        feedbackNode.textContent = feedback.join(" | ");
+        resultSchedule.appendChild(feedbackNode);
+      }
+
+      resultSchedule.hidden = false;
+    }
+
     function showResultError(data) {
       var errorType = data.error_type || "recognition_failed";
       var titleByType = {
@@ -975,6 +805,8 @@ _UI_HTML = """\
       resultGreeting.textContent = data.error || "Veuillez recommencer";
       resultKind.textContent = "ECHEC";
       resultMeta.textContent = "Heure: " + _fmtTime(new Date());
+      resultSchedule.innerHTML = "";
+      resultSchedule.hidden = true;
     }
 
     function backToStandardSoon() {
@@ -1772,12 +1604,15 @@ def create_app() -> Flask:
         return jsonify({
           "ok": True,
           "matched": True,
+          "user_id": api_response.get("user_id"),
+          "username": api_response.get("username"),
           "full_name": api_response.get("full_name"),
+          "distance": api_response.get("distance"),
           "pointage_type": api_response.get("pointage_type"),
           "pointage_id": api_response.get("pointage_id"),
-          "pointage_time": api_response.get("pointage_time"),
-          "pointage_datetime": api_response.get("pointage_datetime") or api_response.get("pointage_at") or api_response.get("created_at"),
-          "api_payload": api_response,
+          "schedule_feedback": api_response.get("schedule_feedback", []),
+          "schedule_flags": api_response.get("schedule_flags", []),
+          "worked_duration_display": api_response.get("worked_duration_display"),
           "liveness": {
             "enabled": bool(settings.liveness_enabled),
             "is_live": None if liveness_result is None else liveness_result.get("is_live"),
