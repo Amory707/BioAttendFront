@@ -581,10 +581,14 @@ _UI_HTML = """\
     function _resolveValue(data, keys) {
       var sources = [
         data,
+        data && data.pointage,
+        data && data.result,
         data && data.metrics,
         data && data.attendance,
         data && data.summary,
         data && data.api_payload,
+        data && data.api_payload && data.api_payload.pointage,
+        data && data.api_payload && data.api_payload.result,
         data && data.api_payload && data.api_payload.metrics,
         data && data.api_payload && data.api_payload.attendance,
         data && data.api_payload && data.api_payload.summary,
@@ -659,6 +663,43 @@ _UI_HTML = """\
       }
       var d = new Date(v);
       if (!isNaN(d.getTime())) return _fmtTime(d);
+      return null;
+    }
+
+    function _parseEpochLike(value) {
+      var n = _toFiniteNumber(value);
+      if (n === null || n <= 0) return null;
+      var intN = Math.floor(n);
+      if (intN > 1000000000000) return new Date(intN); // deja en ms
+      if (intN > 1000000000) return new Date(intN * 1000); // secondes unix
+      return null;
+    }
+
+    function _parseBackendDateTime(v) {
+      if (v === null || v === undefined) return null;
+
+      if (typeof v === "number") {
+        var fromNumber = _parseEpochLike(v);
+        return fromNumber && !isNaN(fromNumber.getTime()) ? fromNumber : null;
+      }
+
+      if (typeof v === "string") {
+        var raw = v.trim();
+        if (!raw || raw === "0" || raw.toLowerCase() === "null" || raw.toLowerCase() === "none") return null;
+
+        if (/^\d+$/.test(raw)) {
+          var fromDigits = _parseEpochLike(Number(raw));
+          return fromDigits && !isNaN(fromDigits.getTime()) ? fromDigits : null;
+        }
+
+        if (/^\d{1,2}:\d{2}(:\d{2})?$/.test(raw)) {
+          return null;
+        }
+
+        var parsed = new Date(raw);
+        if (!isNaN(parsed.getTime())) return parsed;
+      }
+
       return null;
     }
 
@@ -821,14 +862,17 @@ _UI_HTML = """\
 
     function showResultSuccess(data) {
       var type = data.pointage_type === "ENTREE" ? "ENTREE" : "SORTIE";
-      var pointageWhenRaw = _resolveValue(data, [
-        "pointage_datetime",
+      var pointageTimeRaw = _resolveValue(data, [
         "pointage_time",
+        "heure_pointage",
+        "time_pointage",
+      ]);
+      var pointageDateTimeRaw = _resolveValue(data, [
+        "pointage_datetime",
         "pointage_at",
         "timestamp",
         "created_at",
-        "heure_pointage",
-        "time",
+        "pointed_at",
       ]);
       var pointageDateRaw = _resolveValue(data, [
         "pointage_date",
@@ -836,13 +880,11 @@ _UI_HTML = """\
         "work_date",
         "attendance_date",
       ]);
-      var pointageClock = _formatClockLike(pointageWhenRaw);
-      var pointageDateLabel = _formatDateFromRaw(pointageDateRaw || pointageWhenRaw);
-      var pointageDate = null;
-      var parsedPointageDate = new Date(pointageWhenRaw);
-      if (!isNaN(parsedPointageDate.getTime())) pointageDate = parsedPointageDate;
+      var pointageClock = _formatClockLike(pointageTimeRaw) || _formatClockLike(pointageDateTimeRaw);
+      var parsedPointageDate = _parseBackendDateTime(pointageDateTimeRaw);
+      var pointageDateLabel = _formatDateFromRaw(pointageDateRaw || parsedPointageDate);
       var now = new Date();
-      var effectiveDate = pointageDate || now;
+      var effectiveDate = parsedPointageDate || now;
 
       var workedRaw = _resolveValue(data, [
         "temps_travail_effectif",
@@ -858,6 +900,8 @@ _UI_HTML = """\
         "duree_travail_effective",
         "work_time",
         "work_time_display",
+        "worked_hours",
+        "effective_duration",
       ]);
       var delayRaw = _resolveValue(data, [
         "retard",
@@ -867,6 +911,8 @@ _UI_HTML = """\
         "minutes_late",
         "late_duration",
         "retard_display",
+        "late_time",
+        "lateness",
       ]);
       var earlyRaw = _resolveValue(data, [
         "depart_anticipe",
@@ -875,6 +921,8 @@ _UI_HTML = """\
         "minutes_early_departure",
         "early_departure_duration",
         "depart_anticipe_display",
+        "early_leave",
+        "early_leave_duration",
       ]);
 
       var lines = [
