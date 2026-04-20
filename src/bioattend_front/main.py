@@ -614,6 +614,20 @@ _UI_HTML = """\
       var raw = v.trim();
       if (!raw) return null;
 
+      var normalized = raw.toLowerCase().replace(/,/g, ".");
+
+      var hourMinuteText = normalized.match(/^(\d+(?:\.\d+)?)\s*h(?:\s*(\d+(?:\.\d+)?)\s*min)?$/);
+      if (hourMinuteText) {
+        var textH = Number(hourMinuteText[1]) || 0;
+        var textM = Number(hourMinuteText[2] || 0) || 0;
+        return (textH * 60) + textM;
+      }
+
+      var minuteText = normalized.match(/^(\d+(?:\.\d+)?)\s*min$/);
+      if (minuteText) {
+        return Number(minuteText[1]) || 0;
+      }
+
       var hhmmss = raw.match(/^(\d{1,3}):(\d{1,2})(?::(\d{1,2}))?$/);
       if (hhmmss) {
         var h = Number(hhmmss[1]) || 0;
@@ -645,6 +659,35 @@ _UI_HTML = """\
       }
       var d = new Date(v);
       if (!isNaN(d.getTime())) return _fmtTime(d);
+      return null;
+    }
+
+    function _formatDateFromRaw(v) {
+      if (typeof v === "string") {
+        var raw = v.trim();
+        if (raw) {
+          var isoDate = raw.match(/^(\d{4})-(\d{2})-(\d{2})/);
+          if (isoDate) {
+            var y = Number(isoDate[1]);
+            var m = Number(isoDate[2]) - 1;
+            var d = Number(isoDate[3]);
+            var noTzDate = new Date(y, m, d, 12, 0, 0);
+            return _fmtDateEuroLong(noTzDate);
+          }
+
+          var frDate = raw.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+          if (frDate) {
+            var dFr = Number(frDate[1]);
+            var mFr = Number(frDate[2]) - 1;
+            var yFr = Number(frDate[3]);
+            var frAsDate = new Date(yFr, mFr, dFr, 12, 0, 0);
+            return _fmtDateEuroLong(frAsDate);
+          }
+        }
+      }
+
+      var parsed = new Date(v);
+      if (!isNaN(parsed.getTime())) return _fmtDateEuroLong(parsed);
       return null;
     }
 
@@ -787,7 +830,14 @@ _UI_HTML = """\
         "heure_pointage",
         "time",
       ]);
+      var pointageDateRaw = _resolveValue(data, [
+        "pointage_date",
+        "date_pointage",
+        "work_date",
+        "attendance_date",
+      ]);
       var pointageClock = _formatClockLike(pointageWhenRaw);
+      var pointageDateLabel = _formatDateFromRaw(pointageDateRaw || pointageWhenRaw);
       var pointageDate = null;
       var parsedPointageDate = new Date(pointageWhenRaw);
       if (!isNaN(parsedPointageDate.getTime())) pointageDate = parsedPointageDate;
@@ -804,6 +854,10 @@ _UI_HTML = """\
         "worked_duration_minutes",
         "effective_work_minutes",
         "total_work_minutes",
+        "duree_travail",
+        "duree_travail_effective",
+        "work_time",
+        "work_time_display",
       ]);
       var delayRaw = _resolveValue(data, [
         "retard",
@@ -811,33 +865,45 @@ _UI_HTML = """\
         "delay_minutes",
         "late_minutes",
         "minutes_late",
+        "late_duration",
+        "retard_display",
       ]);
       var earlyRaw = _resolveValue(data, [
         "depart_anticipe",
         "depart_anticipe_minutes",
         "early_departure_minutes",
         "minutes_early_departure",
+        "early_departure_duration",
+        "depart_anticipe_display",
       ]);
 
       var lines = [
         "Heure: " + (pointageClock || _fmtTime(effectiveDate)),
-        "Date: " + _fmtDateEuroLong(effectiveDate),
+        "Date: " + (pointageDateLabel || _fmtDateEuroLong(effectiveDate)),
       ];
 
       if (type === "SORTIE") {
         var workedDisplay = _formatMinutes(workedRaw);
         if (!workedDisplay && typeof workedRaw === "string" && workedRaw.trim()) workedDisplay = workedRaw.trim();
-        if (workedDisplay) lines.push("Temps effectif: " + workedDisplay);
+        lines.push("Temps effectif: " + (workedDisplay || "indisponible"));
       }
 
       var delayMins = _parseDurationToMinutes(delayRaw);
       if (delayMins !== null) {
         lines.push(delayMins > 0 ? ("Retard: " + _formatMinutes(delayMins)) : "Retard: aucun");
+      } else if (typeof delayRaw === "string" && delayRaw.trim()) {
+        lines.push("Retard: " + delayRaw.trim());
+      } else {
+        lines.push("Retard: indisponible");
       }
 
       var earlyMins = _parseDurationToMinutes(earlyRaw);
       if (earlyMins !== null) {
         lines.push(earlyMins > 0 ? ("Depart anticipe: " + _formatMinutes(earlyMins)) : "Depart anticipe: aucun");
+      } else if (typeof earlyRaw === "string" && earlyRaw.trim()) {
+        lines.push("Depart anticipe: " + earlyRaw.trim());
+      } else {
+        lines.push("Depart anticipe: indisponible");
       }
 
       resultCard.className = "result-card success";
