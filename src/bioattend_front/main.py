@@ -366,13 +366,13 @@ _UI_HTML = """\
     }
 
     .result-greeting {
-      font-size: clamp(1.3rem, 2.8vw, 2.2rem);
+      font-size: clamp(1.8rem, 3.4vw, 2.8rem);
       color: rgba(255, 255, 255, 0.88);
-      font-weight: 400;
+      font-weight: 600;
     }
 
     .result-kind {
-      font-size: clamp(2.8rem, 9.5vw, 7.5rem);
+      font-size: clamp(2.3rem, 7.8vw, 5.8rem);
       font-weight: 900;
       letter-spacing: 0.06em;
       text-transform: uppercase;
@@ -380,21 +380,36 @@ _UI_HTML = """\
       text-shadow: 0 4px 32px rgba(0, 0, 0, 0.65);
     }
 
-    .result-card.success .result-kind { color: var(--ok); }
-    .result-card.error   .result-kind { color: var(--bad); }
+    .result-card.success.entry .result-kind { color: var(--ok); }
+    .result-card.success.exit .result-kind { color: #ffb24a; }
+    .result-card.error .result-kind { color: var(--bad); }
 
     .result-meta {
       color: rgba(255, 255, 255, 0.45);
-      font-size: clamp(1.3rem, 2.6vw, 1.95rem);
+      font-size: clamp(1.15rem, 2.1vw, 1.45rem);
       line-height: 1.35;
       white-space: pre-line;
     }
 
     .result-schedule {
       display: grid;
-      gap: 12px;
+      gap: 10px;
       justify-items: center;
-      margin-top: 4px;
+      margin-top: -2px;
+      margin-bottom: 2px;
+    }
+
+    .result-keyline {
+      color: #f7fbff;
+      font-size: clamp(1.28rem, 2.5vw, 1.9rem);
+      font-weight: 700;
+      line-height: 1.2;
+      text-align: center;
+    }
+
+    .result-keyline.alert {
+      color: #ff6f6f;
+      text-shadow: 0 0 18px rgba(255, 111, 111, 0.22);
     }
 
     .result-flags {
@@ -421,10 +436,21 @@ _UI_HTML = """\
       color: #ffd36f;
     }
 
+    .result-flag.alert {
+      border-color: rgba(255, 111, 111, 0.4);
+      background: rgba(255, 111, 111, 0.16);
+      color: #ff8f8f;
+    }
+
     .result-feedback {
       color: rgba(255, 255, 255, 0.74);
       font-size: clamp(1rem, 2vw, 1.18rem);
       line-height: 1.45;
+      text-align: center;
+    }
+
+    .result-feedback.alert {
+      color: #ff9b9b;
     }
 
     @media (max-width: 560px) {
@@ -475,8 +501,8 @@ _UI_HTML = """\
         <div class="result-tag" id="resultTag">Resultat</div>
         <div class="result-greeting" id="resultGreeting">Traitement en cours...</div>
         <div class="result-kind" id="resultKind">--</div>
-        <div class="result-meta" id="resultMeta">--</div>
         <div class="result-schedule" id="resultSchedule" hidden></div>
+        <div class="result-meta" id="resultMeta">--</div>
       </div>
     </section>
   </div>
@@ -598,8 +624,20 @@ _UI_HTML = """\
       return _pad(d.getHours()) + ":" + _pad(d.getMinutes()) + ":" + _pad(d.getSeconds());
     }
 
+    function _fmtTimeCompact(d) {
+      return _pad(d.getHours()) + "h" + _pad(d.getMinutes());
+    }
+
     function _fmtDateEuroLong(d) {
       return _DAYS[d.getDay()] + " " + _pad(d.getDate()) + " " + _MONTHS[d.getMonth()] + " " + d.getFullYear();
+    }
+
+    function _fmtDateTimeCompact(d) {
+      var dateLong = _fmtDateEuroLong(d);
+      if (dateLong) {
+        dateLong = dateLong.charAt(0).toLowerCase() + dateLong.slice(1);
+      }
+      return dateLong + ", " + _fmtTimeCompact(d);
     }
 
     function updateClock() {
@@ -733,20 +771,11 @@ _UI_HTML = """\
     function showResultSuccess(data) {
       var type = data.pointage_type === "ENTREE" ? "ENTREE" : "SORTIE";
       var now = new Date();
-      var metaLines = [
-        "Heure: " + _fmtTime(now),
-        "Date: " + _fmtDateEuroLong(now)
-      ];
-
-      if (type === "SORTIE" && data.worked_duration_display) {
-        metaLines.push("Temps effectif: " + data.worked_duration_display);
-      }
-
-      resultCard.className = "result-card success";
+      resultCard.className = "result-card success " + (type === "SORTIE" ? "exit" : "entry");
       resultTag.textContent = "Pointage valide";
       resultGreeting.textContent = "Bonjour " + data.full_name;
       resultKind.textContent = type;
-      resultMeta.textContent = metaLines.join("\\n");
+      resultMeta.textContent = _fmtDateTimeCompact(now);
       renderScheduleDetails(data);
     }
 
@@ -762,30 +791,64 @@ _UI_HTML = """\
     function renderScheduleDetails(data) {
       var flags = Array.isArray(data.schedule_flags) ? data.schedule_flags.filter(Boolean) : [];
       var feedback = Array.isArray(data.schedule_feedback) ? data.schedule_feedback.filter(Boolean) : [];
+      var priorityFlags = flags.filter(function(flag) {
+        return flag === "RETARD" || flag === "DEPART_ANTICIPE";
+      });
+      var otherFlags = flags.filter(function(flag) {
+        return flag !== "RETARD" && flag !== "DEPART_ANTICIPE";
+      });
+      var alertFeedback = feedback.filter(function(msg) {
+        var text = String(msg || "").toLowerCase();
+        return text.indexOf("retard") >= 0 || text.indexOf("anticipe") >= 0;
+      });
+      var otherFeedback = feedback.filter(function(msg) {
+        return alertFeedback.indexOf(msg) < 0;
+      });
 
       resultSchedule.innerHTML = "";
       resultSchedule.hidden = true;
 
-      if (!flags.length && !feedback.length) {
+      if (!flags.length && !feedback.length && !(data.pointage_type === "SORTIE" && data.worked_duration_display)) {
         return;
       }
 
-      if (flags.length) {
+      if (data.pointage_type === "SORTIE" && data.worked_duration_display) {
+        var durationNode = document.createElement("div");
+        durationNode.className = "result-keyline";
+        durationNode.textContent = "Temps effectif: " + data.worked_duration_display;
+        resultSchedule.appendChild(durationNode);
+      }
+
+      if (priorityFlags.length) {
+        var priorityNode = document.createElement("div");
+        priorityNode.className = "result-keyline alert";
+        priorityNode.textContent = priorityFlags.map(_scheduleFlagLabel).join(" | ");
+        resultSchedule.appendChild(priorityNode);
+      }
+
+      if (alertFeedback.length) {
+        var alertFeedbackNode = document.createElement("div");
+        alertFeedbackNode.className = "result-feedback alert";
+        alertFeedbackNode.textContent = alertFeedback.join(" | ");
+        resultSchedule.appendChild(alertFeedbackNode);
+      }
+
+      if (otherFlags.length) {
         var flagsWrap = document.createElement("div");
         flagsWrap.className = "result-flags";
-        flags.forEach(function(flag) {
+        otherFlags.forEach(function(flag) {
           var badge = document.createElement("span");
-          badge.className = "result-flag" + (flag === "RETARD" || flag === "DEPART_ANTICIPE" || flag === "JOURNEE_COURTE" ? " warning" : "");
+          badge.className = "result-flag" + (flag === "JOURNEE_COURTE" ? " warning" : "");
           badge.textContent = _scheduleFlagLabel(flag);
           flagsWrap.appendChild(badge);
         });
         resultSchedule.appendChild(flagsWrap);
       }
 
-      if (feedback.length) {
+      if (otherFeedback.length) {
         var feedbackNode = document.createElement("div");
         feedbackNode.className = "result-feedback";
-        feedbackNode.textContent = feedback.join(" | ");
+        feedbackNode.textContent = otherFeedback.join(" | ");
         resultSchedule.appendChild(feedbackNode);
       }
 
