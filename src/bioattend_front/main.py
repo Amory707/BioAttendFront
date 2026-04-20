@@ -746,7 +746,7 @@ _UI_HTML = """\
       resultTag.textContent = "Pointage valide";
       resultGreeting.textContent = "Bonjour " + data.full_name;
       resultKind.textContent = type;
-      resultMeta.textContent = metaLines.join("\n");
+      resultMeta.textContent = metaLines.join("\\n");
       renderScheduleDetails(data);
     }
 
