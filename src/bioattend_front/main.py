@@ -41,6 +41,8 @@ _UI_HTML = """\
       color: #f0f8ff;
     }
 
+    html.cursor-idle,
+    html.cursor-idle *,
     body.cursor-idle,
     body.cursor-idle * {
       cursor: none !important;
@@ -565,16 +567,16 @@ _UI_HTML = """\
     }
 
     function setupKioskCursorIdle() {
-      if (!KIOSK_MODE) return;
-
       var cursorIdleTimer = null;
       var CURSOR_IDLE_DELAY_MS = 3000;
 
       function hideCursor() {
+        document.documentElement.classList.add("cursor-idle");
         document.body.classList.add("cursor-idle");
       }
 
       function showCursorTemporarily() {
+        document.documentElement.classList.remove("cursor-idle");
         document.body.classList.remove("cursor-idle");
         clearTimeout(cursorIdleTimer);
         cursorIdleTimer = setTimeout(hideCursor, CURSOR_IDLE_DELAY_MS);
