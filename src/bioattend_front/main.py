@@ -18,7 +18,7 @@ _PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
 _UI_HTML = """\
 <!DOCTYPE html>
-<html lang="fr">
+<html lang="fr" class="cursor-idle">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -467,7 +467,7 @@ _UI_HTML = """\
     }
   </style>
 </head>
-<body>
+<body class="cursor-idle">
   <div class="app">
     <div class="logo-bg" aria-hidden="true"><img src="/assets/logo-projet" alt=""></div>
 
@@ -582,11 +582,11 @@ _UI_HTML = """\
         cursorIdleTimer = setTimeout(hideCursor, CURSOR_IDLE_DELAY_MS);
       }
 
-      ["mousemove", "mousedown", "pointermove", "pointerdown", "touchstart", "keydown"].forEach(function(eventName) {
+      hideCursor();
+
+      ["mousemove", "mousedown", "pointermove", "pointerdown", "touchstart"].forEach(function(eventName) {
         document.addEventListener(eventName, showCursorTemporarily, { passive: true });
       });
-
-      showCursorTemporarily();
     }
 
     function setMode(mode) {
