@@ -32,7 +32,12 @@ _UI_HTML = """\
 
     * { box-sizing: border-box; margin: 0; padding: 0; }
 
-    html, body { width: 100%; height: 100%; overflow: hidden; }
+    html, body {
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      cursor: none;
+    }
 
     body {
       background: #06101a;
@@ -41,11 +46,19 @@ _UI_HTML = """\
       color: #f0f8ff;
     }
 
+    *,
     html.cursor-idle,
     html.cursor-idle *,
     body.cursor-idle,
     body.cursor-idle * {
       cursor: none !important;
+    }
+
+    html.cursor-visible,
+    html.cursor-visible *,
+    body.cursor-visible,
+    body.cursor-visible * {
+      cursor: auto !important;
     }
 
     /* ── Conteneur racine ── */
@@ -571,6 +584,8 @@ _UI_HTML = """\
       var CURSOR_IDLE_DELAY_MS = 3000;
 
       function hideCursor() {
+        document.documentElement.classList.remove("cursor-visible");
+        document.body.classList.remove("cursor-visible");
         document.documentElement.classList.add("cursor-idle");
         document.body.classList.add("cursor-idle");
       }
@@ -578,6 +593,8 @@ _UI_HTML = """\
       function showCursorTemporarily() {
         document.documentElement.classList.remove("cursor-idle");
         document.body.classList.remove("cursor-idle");
+        document.documentElement.classList.add("cursor-visible");
+        document.body.classList.add("cursor-visible");
         clearTimeout(cursorIdleTimer);
         cursorIdleTimer = setTimeout(hideCursor, CURSOR_IDLE_DELAY_MS);
       }
