@@ -16,7 +16,7 @@ Raspberry Pi (ce dépôt)  →  API distante (Django + IA)
 
 Le Raspberry Pi est responsable de :
 
-1. Détecter une présence via un capteur PIR
+1. Détecter une présence via un capteur Ultrason
 2. Activer la caméra uniquement quand nécessaire
 3. Détecter et extraire le visage
 4. Effectuer la liveness detection (anti-spoofing)

@@ -41,6 +41,11 @@ _UI_HTML = """\
       color: #f0f8ff;
     }
 
+    body.cursor-idle,
+    body.cursor-idle * {
+      cursor: none !important;
+    }
+
     /* ── Conteneur racine ── */
     .app {
       position: relative;
@@ -559,6 +564,29 @@ _UI_HTML = """\
       CAPTURE_PREP_DELAY_MS = ULTRASON_CAPTURE_PREP_DELAY_MS;
     }
 
+    function setupKioskCursorIdle() {
+      if (!KIOSK_MODE) return;
+
+      var cursorIdleTimer = null;
+      var CURSOR_IDLE_DELAY_MS = 3000;
+
+      function hideCursor() {
+        document.body.classList.add("cursor-idle");
+      }
+
+      function showCursorTemporarily() {
+        document.body.classList.remove("cursor-idle");
+        clearTimeout(cursorIdleTimer);
+        cursorIdleTimer = setTimeout(hideCursor, CURSOR_IDLE_DELAY_MS);
+      }
+
+      ["mousemove", "mousedown", "pointermove", "pointerdown", "touchstart", "keydown"].forEach(function(eventName) {
+        document.addEventListener(eventName, showCursorTemporarily, { passive: true });
+      });
+
+      showCursorTemporarily();
+    }
+
     function setMode(mode) {
       viewStandard.classList.toggle("active", mode === "standard");
       viewCapture.classList.toggle("active", mode === "capture");
@@ -998,6 +1026,7 @@ _UI_HTML = """\
 
     updateClock();
     setInterval(updateClock, 1000);
+    setupKioskCursorIdle();
     updateWeather();
     setInterval(updateWeather, 300000);
   </script>
