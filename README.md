@@ -16,7 +16,7 @@ Raspberry Pi (ce dépôt)  →  API distante (Django + IA)
 
 Le Raspberry Pi est responsable de :
 
-1. Détecter une présence via un capteur PIR
+1. Détecter une présence via un capteur Ultrason
 2. Activer la caméra uniquement quand nécessaire
 3. Détecter et extraire le visage
 4. Effectuer la liveness detection (anti-spoofing)
@@ -81,10 +81,22 @@ Créer un fichier `.env` à la racine du projet. Ce fichier **ne doit jamais êt
 ```env
 # ── Mode debug Flask ──────────────────────────────────────────────
 DEBUG=false
+KIOSK_MODE=true          # Active l'UI borne plein écran
+POINTAGE_TRIGGER_MODE=space   # "space" (clavier/touch), "pir" ou "ultrason"
+ULTRASON_CAPTURE_PREP_DELAY_MS=2600  # Delai pour se placer avant capture quand mode ultrason
+ULTRASON_PRESENCE_COOLDOWN_MS=8000   # Pause apres declenchement avant autoriser un nouveau pointage ultrason
+GPIO_PIR=17
+GPIO_ULTRASON_TRIGGER=18
+GPIO_ULTRASON_ECHO=24
+ULTRASON_DISTANCE_CM=80       # Declenchement auto si distance mesuree <= ce seuil
 
 # ── Caméra ───────────────────────────────────────────────────────
 CAMERA_WIDTH=1280
 CAMERA_HEIGHT=720
+CAMERA_FULL_FOV=true    # Force une demande 4:3 quand la resolution est 16:9 pour limiter le rognage vertical capteur
+CAMERA_MIRROR=true       # Inverse horizontalement l'image (effet miroir)
+CAMERA_SWAP_RB=false     # Mettre a true si les couleurs sont inversees (peau bleue, jaunes, etc.)
+CAMERA_JPEG_QUALITY=68   # 40-95: plus bas = plus fluide, plus haut = meilleure qualite
 CAMERA_DEVICE=0           # Index du device vidéo (ex: 0, 1…)
 CAMERA_SOURCE=auto        # "picamera2" sur Raspberry Pi, "opencv" sur PC, "auto" = détection automatique
 CAMERA_BACKEND=auto       # Backend OpenCV : "v4l2", "any", "auto"
@@ -98,8 +110,16 @@ INSIGHTFACE_DET_HEIGHT=640
 
 # ── API distante ──────────────────────────────────────────────────
 SERVER_URL=https://bioattend.138.199.195.144.sslip.io/api/face/identify/
+EVENTS_URL=https://bioattend.138.199.195.144.sslip.io/api/front/events/
 API_TOKEN=votre_token_ici
 API_TIMEOUT_SECONDS=8
+DEVICE_NAME=bioattend-pi
+
+# ── Liveness (anti-spoofing) ─────────────────────────────────────
+LIVENESS_ENABLED=true
+LIVENESS_MODEL_DIR=models/liveness
+LIVENESS_THRESHOLD=0.80
+LIVENESS_LIVE_CLASS_IDX=0
 ```
 
 ### Variables importantes
@@ -107,9 +127,22 @@ API_TIMEOUT_SECONDS=8
 | Variable | Description | Valeur conseillée |
 |---|---|---|
 | `CAMERA_SOURCE` | Source de capture | `picamera2` sur Raspberry Pi, `opencv` sur PC |
+| `CAMERA_FULL_FOV` | Evite le rognage vertical a la source en preferant une capture 4:3 | `true` sur borne fixe |
+| `CAMERA_MIRROR` | Active l'effet miroir horizontal | `true` pour cadrage type selfie, `false` pour image réelle |
+| `CAMERA_SWAP_RB` | Inverse les canaux rouge/bleu si les couleurs paraissent fausses | `true` uniquement si l'image a des couleurs inversees |
+| `CAMERA_JPEG_QUALITY` | Qualité JPEG du flux live | `60-70` sur Raspberry Pi pour plus de fluidité |
 | `API_TOKEN` | Token d'authentification de l'API | Récupérer auprès du responsable backend |
 | `SERVER_URL` | URL de l'endpoint d'identification | Ne pas modifier sauf changement de déploiement |
+| `EVENTS_URL` | URL de journalisation des tentatives front | Laisser vide si le backend ne l'expose pas encore |
+| `DEVICE_NAME` | Nom logique de la pointeuse | `bioattend-pi` ou un identifiant unique |
 | `DEBUG` | Active le mode debug Flask | `false` en production |
+| `KIOSK_MODE` | Active le comportement borne (plein écran auto) | `true` sur Raspberry Pi |
+| `POINTAGE_TRIGGER_MODE` | Source de déclenchement du pointage | `space`, `pir` ou `ultrason` |
+| `ULTRASON_CAPTURE_PREP_DELAY_MS` | Délai avant capture quand le déclenchement vient de l'ultrason | `2200-3200` selon l'usage |
+| `ULTRASON_PRESENCE_COOLDOWN_MS` | Pause après déclenchement avant un nouveau pointage ultrason | `5000-12000` selon le flux attendu |
+| `GPIO_ULTRASON_TRIGGER` | GPIO BCM du pin Trigger du capteur ultrason | `18` |
+| `GPIO_ULTRASON_ECHO` | GPIO BCM du pin Echo du capteur ultrason | `24` |
+| `ULTRASON_DISTANCE_CM` | Seuil distance (en cm) pour déclenchement auto | `80` |
 
 ---
 
@@ -127,6 +160,16 @@ Le serveur démarre sur `http://0.0.0.0:5000`.
 
 - Sur Raspberry Pi : accessible depuis un navigateur sur le même réseau à `http://<ip-du-raspberry>:5000`
 - Sur PC : ouvrir `http://localhost:5000`
+
+### Mode kiosk Raspberry Pi (recommandé)
+
+Pour un rendu station de pointage sans barre navigateur, lancez Chromium en mode kiosk :
+
+```bash
+chromium-browser --kiosk --app=http://localhost:5000
+```
+
+Avec `KIOSK_MODE=true`, l'interface masque le bouton "Plein écran" et force le comportement borne.
 
 ---
 

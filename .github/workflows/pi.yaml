@@ -106,3 +106,152 @@ jobs:
               exit 1
             fi
           EOF
+
+      - name: Build liveness ONNX models (once per branch)
+        run: |
+          set -euo pipefail
+          BRANCH="${{ github.ref_name }}"
+          DEPLOY_PATH="/home/bioattend/${BRANCH}"
+          MODELS_PATH="${DEPLOY_PATH}/models/liveness"
+          echo "Vérification des modèles liveness sur le Pi..."
+          MODELS_PRESENT=$(sshpass -e ssh -o StrictHostKeyChecking=no "${PI_USER}@${PI_HOST}" \
+            "ls '${MODELS_PATH}'/*.onnx 2>/dev/null | wc -l" || echo "0")
+          if [ "${MODELS_PRESENT}" -ge 2 ]; then
+            echo "✅ Modèles liveness déjà présents (${MODELS_PRESENT} fichiers .onnx)"
+            exit 0
+          fi
+          echo "Conversion des modèles Silent-Face → ONNX (première installation)..."
+          pip install --quiet numpy onnx onnxscript
+          pip install --quiet torch --index-url https://download.pytorch.org/whl/cpu
+          rm -rf /tmp/sfa /tmp/liveness_models
+          git clone --depth 1 https://github.com/minivision-ai/Silent-Face-Anti-Spoofing /tmp/sfa
+          if ! python scripts/make_liveness_onnx.py --sfa-path /tmp/sfa --output-dir /tmp/liveness_models; then
+            echo "⚠️ Conversion ONNX échouée, déploiement poursuivi (liveness restera désactivable)"
+            exit 0
+          fi
+          echo "Upload des modèles vers le Pi..."
+          sshpass -e ssh -o StrictHostKeyChecking=no "${PI_USER}@${PI_HOST}" \
+            "mkdir -p '${MODELS_PATH}'"
+          sshpass -e rsync -avz \
+            -e "ssh -o StrictHostKeyChecking=no" \
+            /tmp/liveness_models/ "${PI_USER}@${PI_HOST}:${MODELS_PATH}/"
+          echo "✅ Modèles liveness déployés"
+
+      - name: Start app automatically on Raspberry Pi
+        run: |
+          set -euo pipefail
+          BRANCH="${{ github.ref_name }}"
+          DEPLOY_PATH="/home/bioattend/${BRANCH}"
+          echo "Démarrage automatique de l'application depuis ${DEPLOY_PATH}..."
+          sshpass -e ssh -o StrictHostKeyChecking=no "${PI_USER}@${PI_HOST}" "BRANCH='${BRANCH}' DEPLOY_PATH='${DEPLOY_PATH}' bash -s" << 'EOF'
+            set -euo pipefail
+            BRANCH="${BRANCH}"
+            DEPLOY_PATH="${DEPLOY_PATH}"
+            BRANCH_SLUG="$(printf '%s' "${BRANCH}" | tr '/ ' '__')"
+            LOG_DIR="/home/bioattend/.bioattend"
+            APP_LOG="${LOG_DIR}/app-${BRANCH_SLUG}.log"
+            PID_FILE="${LOG_DIR}/app-${BRANCH_SLUG}.pid"
+
+            mkdir -p "${LOG_DIR}"
+            cd "${DEPLOY_PATH}"
+
+            if [ ! -f app.py ]; then
+              echo "❌ app.py introuvable dans ${DEPLOY_PATH}"
+              exit 1
+            fi
+
+            if [ -f "${PID_FILE}" ] && kill -0 "$(cat "${PID_FILE}")" 2>/dev/null; then
+              kill "$(cat "${PID_FILE}")" || true
+              sleep 1
+            fi
+
+            # Coupe un ancien serveur Flask lié à cette app pour éviter les conflits de port.
+            pkill -f "python -m flask --app app run --host 0.0.0.0 --port 5000" || true
+
+            nohup "${DEPLOY_PATH}/venv/bin/python" -m flask --app app run --host 0.0.0.0 --port 5000 > "${APP_LOG}" 2>&1 &
+            echo $! > "${PID_FILE}"
+            sleep 3
+
+            if curl -fsS "http://127.0.0.1:5000/health" >/dev/null; then
+              echo "✅ Application démarrée et endpoint /health joignable"
+            else
+              echo "❌ L'application ne répond pas sur le port 5000"
+              echo "--- Dernières logs ---"
+              tail -n 80 "${APP_LOG}" || true
+              exit 1
+            fi
+          EOF
+
+      - name: Configure kiosk autostart on Raspberry Pi
+        run: |
+          set -euo pipefail
+          echo "Configuration du mode kiosk au démarrage de session graphique..."
+          sshpass -e ssh -o StrictHostKeyChecking=no "${PI_USER}@${PI_HOST}" bash << 'EOF'
+            set -euo pipefail
+            AUTOSTART_DIR="/home/bioattend/.config/lxsession/LXDE-pi"
+            AUTOSTART_FILE="${AUTOSTART_DIR}/autostart"
+            LABWC_DIR="/home/bioattend/.config/labwc"
+            LABWC_AUTOSTART_FILE="${LABWC_DIR}/autostart"
+            BIN_DIR="/home/bioattend/.local/bin"
+            KIOSK_SCRIPT="${BIN_DIR}/bioattend-kiosk.sh"
+
+            mkdir -p "${AUTOSTART_DIR}"
+            mkdir -p "${LABWC_DIR}"
+            mkdir -p "${BIN_DIR}"
+
+            {
+              echo '#!/usr/bin/env bash'
+              echo 'set -u'
+              echo ''
+              echo 'LOG_DIR="/home/bioattend/.bioattend"'
+              echo 'LOG_FILE="${LOG_DIR}/kiosk.log"'
+              echo 'mkdir -p "${LOG_DIR}"'
+              echo 'exec >> "${LOG_FILE}" 2>&1'
+              echo ''
+              echo 'echo "[$(date '+"'"'%Y-%m-%d %H:%M:%S'"'"')] kiosk start"'
+              echo ''
+              echo '# Laisse la session graphique se stabiliser et l app Flask demarrer.'
+              echo 'sleep 8'
+              echo ''
+              echo 'for _ in $(seq 1 30); do'
+              echo '  if curl -fsS "http://127.0.0.1:5000/health" >/dev/null 2>&1; then'
+              echo '    break'
+              echo '  fi'
+              echo '  sleep 1'
+              echo 'done'
+              echo ''
+              echo 'export XDG_SESSION_TYPE="${XDG_SESSION_TYPE:-wayland}"'
+              echo 'export WAYLAND_DISPLAY="${WAYLAND_DISPLAY:-wayland-0}"'
+              echo 'export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"'
+              echo ''
+              echo 'BROWSER="$(command -v chromium || command -v chromium-browser || true)"'
+              echo 'if [ -z "${BROWSER}" ]; then'
+              echo '  echo "Chromium introuvable"'
+              echo '  exit 0'
+              echo 'fi'
+              echo ''
+              echo 'pkill -f "chromium.*--app=http://localhost:5000" >/dev/null 2>&1 || true'
+              echo '"${BROWSER}" --ozone-platform=wayland --kiosk --app=http://localhost:5000 --noerrdialogs --disable-infobars'
+            } > "${KIOSK_SCRIPT}"
+
+            chmod +x "${KIOSK_SCRIPT}"
+
+            {
+              echo "@xset s off"
+              echo "@xset -dpms"
+              echo "@xset s noblank"
+              echo "@bash -lc 'pkill -x unclutter >/dev/null 2>&1 || true; command -v unclutter >/dev/null 2>&1 && unclutter -idle 0 -root &'"
+              echo "@${KIOSK_SCRIPT}"
+            } > "${AUTOSTART_FILE}"
+
+            {
+              echo 'wlr-randr --output HDMI-A-1 --on >/dev/null 2>&1 || true'
+              echo 'pkill -x unclutter >/dev/null 2>&1 || true'
+              echo 'command -v unclutter >/dev/null 2>&1 && unclutter -idle 0 -root &' 
+              echo "${KIOSK_SCRIPT} &"
+            } > "${LABWC_AUTOSTART_FILE}"
+
+            echo "✅ Fichier autostart kiosk mis à jour: ${AUTOSTART_FILE}"
+            echo "✅ Fichier autostart labwc mis à jour: ${LABWC_AUTOSTART_FILE}"
+            echo "✅ Script kiosk généré: ${KIOSK_SCRIPT}"
+          EOF
