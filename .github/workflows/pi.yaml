@@ -45,7 +45,7 @@ jobs:
           MAX_ATTEMPTS=15
           for i in $(seq 1 $MAX_ATTEMPTS); do
             if sshpass -e ssh -o StrictHostKeyChecking=no -o ConnectTimeout=45 "${PI_USER}@${PI_HOST}" "true" >/dev/null 2>&1; then
-              echo "✅ Pi joignable"
+              echo "Pi joignable"
               exit 0
             fi
             sleep 5
@@ -77,7 +77,7 @@ jobs:
             --timeout=30 \
             -e "ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10" \
             ./ "${PI_USER}@${PI_HOST}:${DEPLOY_PATH}/"
-          echo "✅ Fichiers synchronisés"
+          echo "Fichiers synchronisés"
 
       - name: Install Python dependencies in branch venv
         run: |
@@ -100,9 +100,9 @@ jobs:
             if [ -f requirements.txt ]; then
               pip install --upgrade pip setuptools wheel
               pip install -r requirements.txt
-              echo "✅ Dépendances installées avec succès"
+              echo "Dépendances installées avec succès"
             else
-              echo "⚠️ requirements.txt non trouvé"
+              echo "requirements.txt non trouvé"
               exit 1
             fi
           EOF
@@ -117,7 +117,7 @@ jobs:
           MODELS_PRESENT=$(sshpass -e ssh -o StrictHostKeyChecking=no "${PI_USER}@${PI_HOST}" \
             "ls '${MODELS_PATH}'/*.onnx 2>/dev/null | wc -l" || echo "0")
           if [ "${MODELS_PRESENT}" -ge 2 ]; then
-            echo "✅ Modèles liveness déjà présents (${MODELS_PRESENT} fichiers .onnx)"
+            echo "Modèles liveness déjà présents (${MODELS_PRESENT} fichiers .onnx)"
             exit 0
           fi
           echo "Conversion des modèles Silent-Face → ONNX (première installation)..."
@@ -126,7 +126,7 @@ jobs:
           rm -rf /tmp/sfa /tmp/liveness_models
           git clone --depth 1 https://github.com/minivision-ai/Silent-Face-Anti-Spoofing /tmp/sfa
           if ! python scripts/make_liveness_onnx.py --sfa-path /tmp/sfa --output-dir /tmp/liveness_models; then
-            echo "⚠️ Conversion ONNX échouée, déploiement poursuivi (liveness restera désactivable)"
+            echo "Conversion ONNX échouée, déploiement poursuivi (liveness restera désactivable)"
             exit 0
           fi
           echo "Upload des modèles vers le Pi..."
@@ -135,7 +135,7 @@ jobs:
           sshpass -e rsync -avz \
             -e "ssh -o StrictHostKeyChecking=no" \
             /tmp/liveness_models/ "${PI_USER}@${PI_HOST}:${MODELS_PATH}/"
-          echo "✅ Modèles liveness déployés"
+          echo "Modèles liveness déployés"
 
       - name: Start app automatically on Raspberry Pi
         run: |
@@ -156,7 +156,7 @@ jobs:
             cd "${DEPLOY_PATH}"
 
             if [ ! -f app.py ]; then
-              echo "❌ app.py introuvable dans ${DEPLOY_PATH}"
+              echo "app.py introuvable dans ${DEPLOY_PATH}"
               exit 1
             fi
 
@@ -173,9 +173,9 @@ jobs:
             sleep 3
 
             if curl -fsS "http://127.0.0.1:5000/health" >/dev/null; then
-              echo "✅ Application démarrée et endpoint /health joignable"
+              echo "Application démarrée et endpoint /health joignable"
             else
-              echo "❌ L'application ne répond pas sur le port 5000"
+              echo "L'application ne répond pas sur le port 5000"
               echo "--- Dernières logs ---"
               tail -n 80 "${APP_LOG}" || true
               exit 1
@@ -251,7 +251,7 @@ jobs:
               echo "${KIOSK_SCRIPT} &"
             } > "${LABWC_AUTOSTART_FILE}"
 
-            echo "✅ Fichier autostart kiosk mis à jour: ${AUTOSTART_FILE}"
-            echo "✅ Fichier autostart labwc mis à jour: ${LABWC_AUTOSTART_FILE}"
-            echo "✅ Script kiosk généré: ${KIOSK_SCRIPT}"
+            echo "Fichier autostart kiosk mis à jour: ${AUTOSTART_FILE}"
+            echo "Fichier autostart labwc mis à jour: ${LABWC_AUTOSTART_FILE}"
+            echo "Script kiosk généré: ${KIOSK_SCRIPT}"
           EOF

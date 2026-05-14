@@ -1,316 +1,315 @@
-# BioAttendFront
+# BioAttend Front — Pointeuse / Interface locale
 
-Partie embarquée du projet **BioAttend**, exécutée sur Raspberry Pi.
+BioAttendFront est l'application légère qui tourne sur la borne (Raspberry Pi).  
+Elle gère la capture caméra, la détection et recadrage du visage, la génération d'embeddings via InsightFace, la vérification de liveness (optionnelle), l'appel au serveur central (BioAttend) pour identification et la présentation d'une UI kiosque (Flask + page HTML/JS unique).
 
-Ce dépôt implémente un client léger chargé de piloter le matériel, capturer une image exploitable, préparer les données pour la reconnaissance faciale et communiquer avec l'API distante. **Toute la logique métier reste côté serveur.**
-
----
-
-## Vue d'ensemble du projet
-
-Le système de pointage fonctionne selon l'architecture suivante :
-
-```
-Raspberry Pi (ce dépôt)  →  API distante (Django + IA)
-```
-
-Le Raspberry Pi est responsable de :
-
-1. Détecter une présence via un capteur Ultrason
-2. Activer la caméra uniquement quand nécessaire
-3. Détecter et extraire le visage
-4. Effectuer la liveness detection (anti-spoofing)
-5. Générer un embedding via InsightFace
-6. Envoyer cet embedding à l'API distante
-7. Afficher un retour utilisateur local (nom, heure, type de pointage)
+- Langage principal : Python (Flask)
+- UI : page HTML embarquée (single-file template dans `main.py`)
+- Usage typique : tourner sur un Raspberry Pi connecté à une caméra pour fonctionner en mode kiosque.
 
 ---
 
-## Structure du dépôt
+## Table des matières
 
-```
-app.py                          # Point d'entrée Flask
-requirements.txt                # Dépendances Python
-.env                            # Configuration locale (à créer, non versionné)
-src/
-  bioattend_front/
-    __init__.py                 # Fabrique de l'application Flask
-    config.py                   # Chargement de la config depuis .env
-    camera.py                   # Capture de frame (Picamera2 + OpenCV)
-    face.py                     # Détection et crop du visage
-    embedding.py                # Génération de l'embedding (InsightFace)
-    api_client.py               # Appel HTTP vers l'API distante
-    main.py                     # Routes Flask (interface + diagnostics)
-```
+- [Quickstart local](#quickstart-local)
+- [Variables d'environnement / configuration](#variables-denvironnement--configuration)
+- [Dépendances principales](#dépendances-principales)
+- [Structure du projet](#structure-du-projet)
+- [Endpoints exposés](#endpoints-exposés)
+- [Flux principal (capture → identification)](#flux-principal-capture--identification)
+- [Système de liveness & modèles ONNX](#système-de-liveness--modèles-onnx)
+- [GitHub Action : déploiement sur Raspberry Pi (détail)](#github-action-déploiement-sur-raspberry-pi-détail)
+- [Exemples d'utilisation (cURL) et debugging](#exemples-ducurl-et-debugging)
+- [Conseils d'exploitation / sécurité](#conseils-dexploitation--sécurité)
 
 ---
 
-## Prérequis
+## Quickstart local
 
-- Python 3.10+
-- Sur Raspberry Pi : `libcamera` et `picamera2` installés via le système
-- Sur PC de développement : une webcam USB suffit pour tester
+1. Cloner le dépôt et positionner-toi à la racine du projet.
+2. Créer un fichier `.env` (voir section variables).
+3. Installer les dépendances dans un venv :
+   ```bash
+   python3 -m venv .venv
+   source .venv/bin/activate
+   pip install -r requirements.txt
+   ```
+4. Lancer l'application (mode développement) :
+   ```bash
+   # méthode 1 (recommandé pour dev)
+   export FLASK_APP=app
+   flask --app app run --host 0.0.0.0 --port 5000
 
----
+   # ou méthode directe (si python trouve app.app)
+   python -m flask --app app run --host 0.0.0.0 --port 5000
+   ```
+5. Ouvrir `http://<pi-ip>:5000/` dans un navigateur pour l'UI kiosque.
 
-## Installation
-
-```bash
-git clone https://github.com/Nde-Code/BioAttendFront.git
-cd BioAttendFront
-
-# Créer un environnement virtuel (recommandé)
-python3 -m venv .venv
-source .venv/bin/activate
-
-# Installer les dépendances
-pip install -r requirements.txt
-```
-
-> **Note Raspberry Pi :** `picamera2` s'installe via apt et non pip :
-> ```bash
-> sudo apt install python3-picamera2
-> ```
+Remarque : le projet lit `.env` via python-dotenv (fichier résolu dans `config.py`).
 
 ---
 
-## Configuration — fichier `.env`
+## Variables d'environnement / configuration
 
-Créer un fichier `.env` à la racine du projet. Ce fichier **ne doit jamais être versionné** (il est dans `.gitignore`).
+La configuration est centralisée dans `src/bioattend_front/config.py`. Les variables sont lues depuis `.env`. Voici les plus importantes (avec leurs valeurs par défaut si présentes) :
 
-```env
-# ── Mode debug Flask ──────────────────────────────────────────────
-DEBUG=false
-KIOSK_MODE=true          # Active l'UI borne plein écran
-POINTAGE_TRIGGER_MODE=space   # "space" (clavier/touch), "pir" ou "ultrason"
-ULTRASON_CAPTURE_PREP_DELAY_MS=2600  # Delai pour se placer avant capture quand mode ultrason
-ULTRASON_PRESENCE_COOLDOWN_MS=8000   # Pause apres declenchement avant autoriser un nouveau pointage ultrason
-GPIO_PIR=17
-GPIO_ULTRASON_TRIGGER=18
-GPIO_ULTRASON_ECHO=24
-ULTRASON_DISTANCE_CM=80       # Declenchement auto si distance mesuree <= ce seuil
+- DEBUG (bool) — par défaut False
+- KIOSK_MODE (bool) — default True
+- DEVICE_NAME — nom de l’appareil (par défaut `bioattend-pi`)
+- CAMERA_MIRROR (bool) — mirror horizontal du feed (True par défaut)
+- CAMERA_SWAP_RB (bool)
+- CAMERA_JPEG_QUALITY (int) — 40..95 (default 68)
+- LIVENESS_ENABLED (bool) — active la vérification anti-spoof
+- LIVENESS_MODEL_DIR — dossier des modèles liveness (défaut `./models/liveness`)
+- LIVENESS_THRESHOLD (float) — seuil
+- LIVENESS_LIVE_CLASS_IDX (int) — index de la classe live
+- CAMERA_WIDTH / CAMERA_HEIGHT — résolution par défaut (1280x720)
+- CAMERA_DEVICE / CAMERA_SOURCE / CAMERA_BACKEND — source de la caméra
+- CAMERA_WARMUP_MS / CAMERA_READ_ATTEMPTS
+- INSIGHTFACE_MODEL_NAME — modèle InsightFace utilisé (`buffalo_l` par défaut)
+- INSIGHTFACE_DET_WIDTH / INSIGHTFACE_DET_HEIGHT
+- SERVER_URL — URL d’identification (par défaut fourni dans le code, remplacer par votre serveur)
+- EVENTS_URL — URL pour poster les events (ex: `/api/front/events/`)
+- API_TOKEN — token utilisé pour Authorization / X-API-Key
+- API_TIMEOUT_SECONDS — timeouts pour appels HTTP (default 8s)
+- POINTAGE_TRIGGER_MODE — `space` | `pir` | `ultrason` (par défaut `space`)
+- ULTRASON_CAPTURE_PREP_DELAY_MS — délai before taking picture (pour ultrason)
+- ULTRASON_PRESENCE_COOLDOWN_MS — cooldown
+- GPIO_PIR — pin BCM pour PIR
+- GPIO_ULTRASON_TRIGGER / GPIO_ULTRASON_ECHO — pins pour HC-SR04
+- ULTRASON_DISTANCE_CM — distance seuil pour présence (default 80.0)
 
-# ── Caméra ───────────────────────────────────────────────────────
-CAMERA_WIDTH=1280
-CAMERA_HEIGHT=720
-CAMERA_FULL_FOV=true    # Force une demande 4:3 quand la resolution est 16:9 pour limiter le rognage vertical capteur
-CAMERA_MIRROR=true       # Inverse horizontalement l'image (effet miroir)
-CAMERA_SWAP_RB=false     # Mettre a true si les couleurs sont inversees (peau bleue, jaunes, etc.)
-CAMERA_JPEG_QUALITY=68   # 40-95: plus bas = plus fluide, plus haut = meilleure qualite
-CAMERA_DEVICE=0           # Index du device vidéo (ex: 0, 1…)
-CAMERA_SOURCE=auto        # "picamera2" sur Raspberry Pi, "opencv" sur PC, "auto" = détection automatique
-CAMERA_BACKEND=auto       # Backend OpenCV : "v4l2", "any", "auto"
-CAMERA_WARMUP_MS=800      # Temps de chauffe caméra en millisecondes
-CAMERA_READ_ATTEMPTS=10   # Nombre de tentatives de lecture de frame
+Fonction utilitaire : `Settings.from_env()` (voir `config.py`) charge et normalise ces valeurs. `Settings.as_public_dict()` donne une version masquée (utile pour diagnostics).
 
-# ── InsightFace (génération d'embeddings) ─────────────────────────
-INSIGHTFACE_MODEL_NAME=buffalo_l
-INSIGHTFACE_DET_WIDTH=640
-INSIGHTFACE_DET_HEIGHT=640
-
-# ── API distante ──────────────────────────────────────────────────
-SERVER_URL=https://bioattend.138.199.195.144.sslip.io/api/face/identify/
-EVENTS_URL=https://bioattend.138.199.195.144.sslip.io/api/front/events/
-API_TOKEN=votre_token_ici
-API_TIMEOUT_SECONDS=8
-DEVICE_NAME=bioattend-pi
-
-# ── Liveness (anti-spoofing) ─────────────────────────────────────
-LIVENESS_ENABLED=true
-LIVENESS_MODEL_DIR=models/liveness
-LIVENESS_THRESHOLD=0.80
-LIVENESS_LIVE_CLASS_IDX=0
+Exemple minimal `.env` :
+```dotenv
+DEBUG=true
+KIOSK_MODE=true
+DEVICE_NAME=bioattend-pi-01
+SERVER_URL=https://mon-bioattend.example.com/api/face/identify/
+EVENTS_URL=https://mon-bioattend.example.com/api/front/events/
+API_TOKEN=MaCleApiPourLesPointeuses
+LIVENESS_ENABLED=false
 ```
 
-### Variables importantes
+---
 
-| Variable | Description | Valeur conseillée |
-|---|---|---|
-| `CAMERA_SOURCE` | Source de capture | `picamera2` sur Raspberry Pi, `opencv` sur PC |
-| `CAMERA_FULL_FOV` | Evite le rognage vertical a la source en preferant une capture 4:3 | `true` sur borne fixe |
-| `CAMERA_MIRROR` | Active l'effet miroir horizontal | `true` pour cadrage type selfie, `false` pour image réelle |
-| `CAMERA_SWAP_RB` | Inverse les canaux rouge/bleu si les couleurs paraissent fausses | `true` uniquement si l'image a des couleurs inversees |
-| `CAMERA_JPEG_QUALITY` | Qualité JPEG du flux live | `60-70` sur Raspberry Pi pour plus de fluidité |
-| `API_TOKEN` | Token d'authentification de l'API | Récupérer auprès du responsable backend |
-| `SERVER_URL` | URL de l'endpoint d'identification | Ne pas modifier sauf changement de déploiement |
-| `EVENTS_URL` | URL de journalisation des tentatives front | Laisser vide si le backend ne l'expose pas encore |
-| `DEVICE_NAME` | Nom logique de la pointeuse | `bioattend-pi` ou un identifiant unique |
-| `DEBUG` | Active le mode debug Flask | `false` en production |
-| `KIOSK_MODE` | Active le comportement borne (plein écran auto) | `true` sur Raspberry Pi |
-| `POINTAGE_TRIGGER_MODE` | Source de déclenchement du pointage | `space`, `pir` ou `ultrason` |
-| `ULTRASON_CAPTURE_PREP_DELAY_MS` | Délai avant capture quand le déclenchement vient de l'ultrason | `2200-3200` selon l'usage |
-| `ULTRASON_PRESENCE_COOLDOWN_MS` | Pause après déclenchement avant un nouveau pointage ultrason | `5000-12000` selon le flux attendu |
-| `GPIO_ULTRASON_TRIGGER` | GPIO BCM du pin Trigger du capteur ultrason | `18` |
-| `GPIO_ULTRASON_ECHO` | GPIO BCM du pin Echo du capteur ultrason | `24` |
-| `ULTRASON_DISTANCE_CM` | Seuil distance (en cm) pour déclenchement auto | `80` |
+## Dépendances principales
+
+Les dépendances requises (essentielles observées dans le code) :
+- Flask
+- requests
+- python-dotenv
+- opencv-python (cv2)
+- numpy
+- insightface (pour génération d'embeddings côté front si besoin)
+- (facultatif) RPi.GPIO — si tu utilises les GPIO du Pi (PIR / ultrason)
+- (pour conversion/ONNX) onnx, onnxscript, torch (CPU wheel)
+- autres utilitaires selon `requirements.txt`
+
+Installe via `pip install -r requirements.txt`. Sur Raspberry Pi, préférer des wheels compatibles CPU et installer les paquets système requis pour OpenCV si besoin.
 
 ---
 
-## Lancer le serveur
+## Structure du projet (principaux fichiers)
 
-```bash
-# Activer l'environnement virtuel si ce n'est pas déjà fait
-source .venv/bin/activate
-
-# Lancer Flask
-python app.py
-```
-
-Le serveur démarre sur `http://0.0.0.0:5000`.
-
-- Sur Raspberry Pi : accessible depuis un navigateur sur le même réseau à `http://<ip-du-raspberry>:5000`
-- Sur PC : ouvrir `http://localhost:5000`
-
-### Mode kiosk Raspberry Pi (recommandé)
-
-Pour un rendu station de pointage sans barre navigateur, lancez Chromium en mode kiosk :
-
-```bash
-chromium-browser --kiosk --app=http://localhost:5000
-```
-
-Avec `KIOSK_MODE=true`, l'interface masque le bouton "Plein écran" et force le comportement borne.
+- `app.py` — bootstrap : ajoute `src` au PYTHONPATH et importe `create_app()`.
+- `src/bioattend_front/`
+  - `main.py` — définition complète de l'app Flask (routes, logique capture, pointage, diagnostics).
+  - `api_client.py` — fonctions HTTP vers le serveur central (`identify_embedding`, `report_event`).
+  - `config.py` — chargement et normalisation des variables d'environnement (`Settings`).
+  - `camera.py` — logique de capture caméra (frame capture, fast capture, platform metadata).
+  - `face.py` — détection & recadrage de visage (renvoie bbox, face_crop).
+  - `embedding.py` — génération d'embedding à partir d'un crop (insightface/onnx).
+  - `liveness.py` — vérification anti-spoof (liveness) ; wrapper pour modèles installés.
+  - `models/` — (dans root) modèles liveness ONNX (déployés par l'action).
+- `Logo projet.png` — logo affiché en fond UI.
+- `.github/workflows/pi.yaml` — workflow GitHub Actions pour déployer sur le Pi.
+- `requirements.txt` — listes des packages.
 
 ---
 
-## Interface utilisateur
+## Endpoints exposés (serveur local sur le Pi)
 
-La page principale (`/`) affiche :
+Routes HTTP utiles exposées par l'app Flask :
 
-- Le flux de la caméra en temps réel avec un ovale de cadrage
-- Un bouton **Pointer** (ou touche `Espace`) pour déclencher l'identification
-- Un retour visuel : **vert** si reconnu (nom + heure + type de pointage), **rouge** sinon
+- GET `/`  
+  - UI kiosque HTML (page unique embarquée).
+
+- GET `/health`  
+  - Test de vie : `{ "ok": true, "service": "bioattend-front" }`
+
+- GET `/pir/status`  
+  - Statut du capteur PIR (mode `pir`). Réponses : 200 `{ok: true, detected: bool}` | 400 mode incorrect | 503 gpio indisponible.
+
+- GET `/ultrason/status`  
+  - Statut capteur ultrason (mode `ultrason`). Retourne JSON `{ok, detected, distance_cm, threshold_cm, mode}`
+
+- GET `/presence/status`  
+  - Statut combiné (renvoie le mode actif et `detected`).
+
+- GET `/diagnostics/config`  
+  - Retourne la config publique `{ ok: true, config: {...} }`
+
+- GET/POST `/diagnostics/camera`  
+  - Test de la caméra (probe), renvoie `{ok: true, ...}` ou 503.
+
+- GET/POST `/diagnostics/face`  
+  - Capture et detection de face, renvoie informations sur le visage détecté.
+
+- GET/POST `/diagnostics/embedding`  
+  - Génère embedding depuis un face crop (retire le vecteur brut dans la réponse par défaut pour sécurité).
+
+- GET/POST `/diagnostics/identify`  
+  - Capture, génère embedding et appelle le serveur central d'identification (report_result inclus).
+
+- GET `/diagnostics/liveness`  
+  - Test liveness (si activé) — renvoie score et verdict.
+
+- GET `/diagnostics/liveness/preview`  
+  - Renvoie un JPEG annoté (bbox & regions) pour debug.
+
+- GET `/snapshot`  
+  - Renvoie la dernière image encodée en JPEG (option `?boxes=1` pour dessiner bbox, `?liveness=1` pour overlay liveness en diagnostic).
+
+- POST `/pointage`  
+  - Flux principal déclenché par l'UI : effectue capture(s) jusqu'à confirma­tion de face, (liveness si activé), génération d'embedding, appel API centrale (`identify_embedding`) :
+    - Succès 200 : JSON `{ ok: true, matched: true, user_id, username, full_name, pointage_type, ... }`
+    - Erreurs diverses : 422 (no face), 503 (capture/embedding/liveness error), 401 (unknown/spoof), etc.
+  - En cas d'échec l'app appelle `report_event()` pour journaliser l'événement vers `EVENTS_URL`.
+
+- GET `/assets/logo-projet`  
+  - Sert l'image `Logo projet.png`
 
 ---
 
-## Routes de diagnostic
+## Flux principal (capture → identification) résumé
 
-Ces routes permettent de tester chaque brique du pipeline de façon isolée. Utiles pour déboguer.
-
-| Méthode | Route | Description |
-|---|---|---|
-| `GET` | `/health` | Vérifie que le service tourne |
-| `GET` | `/config` | Affiche la configuration active (token masqué) |
-| `GET` | `/diagnostics/camera` | Teste la capture d'une frame |
-| `GET` | `/diagnostics/face` | Teste la détection + crop du visage |
-| `GET` | `/diagnostics/embedding` | Teste la génération du vecteur |
-| `GET/POST` | `/diagnostics/identify` | Teste le pipeline complet jusqu'à l'appel API |
-| `GET` | `/snapshot` | Retourne une frame JPEG brute (utilisé par l'UI) |
-| `POST` | `/pointage` | Déclenche un pointage complet |
+1. L'UI déclenche `/pointage`.
+2. Le serveur exécute `_capture_with_face()` : prend plusieurs frames rapides jusqu'à confirmation d'une face stable (IoU entre bbox successives).
+3. Si `liveness_enabled` : exécute `check_liveness(...)`. Si échec → événement `spoof_attempt` ou rejet.
+4. Génère l'embedding via `generate_embedding(...)` (insightface / ONNX).
+5. Appelle `identify_embedding(embedding, settings)` dans `api_client.py` qui POSTe vers `SERVER_URL` (ton serveur central — ex `/api/face/identify/`) avec headers Authorization/X-API-Key (API_TOKEN).
+6. Si identifiée : renvoie success au frontend (UI) qui affiche carte verte et informations.
+7. Si non identifiée ou erreur : renvoie message d'erreur et journalise l'événement (report_event) auprès du serveur central (EVENTS_URL).
 
 ---
 
-## Philosophie de développement
+## Système de liveness & modèles ONNX
 
-Le projet est bâti de façon **incrémentale** : chaque brique est validée séparément avant d'être intégrée au pipeline. Sur Raspberry Pi, si tout est assemblé d'un coup, il devient très difficile de savoir d'où vient une panne (matériel, caméra, modèle IA, réseau…).
-
-**Règles à respecter :**
-
-- Le Raspberry Pi est un **client léger** : aucune logique métier locale
-- **Aucune image ne doit être stockée** sur le disque (respect RGPD)
-- Le pipeline d'identification est **séquentiel et strict** : PIR → caméra → visage → liveness → embedding → API → affichage
-- Avancer par petites étapes testables via les routes `/diagnostics/*`
-
----
-
-## Choix techniques
-
-### Picamera2 pour la capture
-
-Sur Raspberry Pi avec caméra CSI, OpenCV seul n'est pas fiable (la caméra est détectée mais aucune frame exploitable n'est retournée). **Picamera2** s'appuie sur la pile libcamera native du Raspberry et permet une capture fiable. OpenCV prend ensuite le relais for le traitement.
-
-Sur PC de développement, `CAMERA_SOURCE=opencv` utilise directement OpenCV avec la webcam.
-
-### InsightFace pour les embeddings
-
-InsightFace transforme le visage en un vecteur numérique (embedding). C'est ce vecteur, et non l'image, qui est envoyé à l'API — plus léger et plus respectueux de la vie privée.
+- `liveness.py` encapsule la logique d'anti-spoof. Les modèles attendus sont des fichiers `.onnx` placés dans `models/liveness`.
+- L'action GitHub (décrite ci‑dessous) contient un step "Build liveness ONNX models" qui :
+  - Clone Silent-Face-Anti-Spoofing (SFA),
+  - Lance `scripts/make_liveness_onnx.py` pour produire les .onnx,
+  - Upload les modèles générés sur le Pi dans le dossier `${DEPLOY_PATH}/models/liveness`.
+- Sur le Pi, `LIVENESS_MODEL_DIR` (variable) doit pointer sur ce dossier.
+- `LIVENESS_THRESHOLD` et `LIVENESS_LIVE_CLASS_IDX` contrôlent la décision `is_live`.
 
 ---
 
-## Déploiement automatique
+## GitHub Action — déploiement sur le Raspberry Pi (détail)
 
-Une GitHub Action déploie automatiquement le dépôt sur le Raspberry Pi cible à chaque push sur la branche `main`.
+Le workflow est `.github/workflows/pi.yaml`. Principales caractéristiques et étapes :
 
-Le workflow :
+### Déclenchement
+- Événement : `push` sur n’importe quelle branche (`'**'`) et `workflow_dispatch` (manuel).
+- Permissions : `contents: read`, `id-token: write`.
 
-1. recupere le code de la branche poussee
-2. rejoint le Raspberry via Tailscale et SSH
-3. synchronise les fichiers dans un dossier dedie a la branche
-4. cree ou reutilise un environnement virtuel Python sur le Pi
-5. installe les dependances depuis requirements.txt
+### Secrets requis (à configurer dans GitHub)
+- `PI_HOST` — adresse/hostname Tailscale ou IP du Pi.
+- `TAILSCALE_AUTHKEY` — clé d'auth Tailscale pour connecter le runner au réseau Tailscale.
+- `PI_PASSWORD` — mot de passe SSH du user `bioattend` sur le Pi (utilisé par sshpass).
+  - Note : le workflow définit `PI_USER` à `bioattend` en dur.
 
-Ce choix permet :
+> Les secrets sont référencés dans l'action via `${{ secrets.NAME }}`.
 
-1. de tester rapidement sur le materiel reel
-2. de travailler branche par branche sans casser un etat stable
-3. de garder un cycle simple : modification, push, deploiement, verification sur Pi
+### Étapes clefs du job `deploy`
+1. Checkout du dépôt.
+2. Installation de `sshpass` (permet fournir le mot de passe SSH via variable d'environnement `SSHPASS`).
+3. Connexion du runner à Tailscale (`tailscale/github-action@v2`) avec `authkey`.
+4. Vérification connectivité Tailscale & ping vers `${PI_HOST}`.
+5. Boucle d'attente SSH : tente une connexion SSH (max 15 essais) pour s'assurer que le Pi est joignable.
+6. Création d'un répertoire de déploiement sur le Pi :
+   - `DEPLOY_PATH="/home/bioattend/${BRANCH}"` où `${BRANCH}` est la branche courante (`github.ref_name`).
+   - Cela permet avoir un déploiement isolé par branche sur le Pi.
+7. Synchronisation des fichiers avec `rsync` (exclut `.git`, `.github`, `venv`, `__pycache__`, `*.pyc`).
+8. Installation des dépendances Python sur le Pi :
+   - Crée/active `venv` dans `${DEPLOY_PATH}/venv` (avec `--system-site-packages`).
+   - `pip install -r requirements.txt` (vérifie que `requirements.txt` est présent).
+9. Build / upload modèles `liveness` ONNX (si absents) :
+   - Si le Pi n'a pas au moins 2 .onnx dans `${DEPLOY_PATH}/models/liveness`, le runner :
+     - Installe numpy/onnx/onnxscript, torch (CPU) localement,
+     - Clone `Silent-Face-Anti-Spoofing` en /tmp,
+     - Lance `scripts/make_liveness_onnx.py` pour générer les modèles,
+     - Envoie les fichiers `.onnx` vers `${MODELS_PATH}` sur le Pi via rsync.
+   - Si la conversion échoue, le workflow continue (liveness peut rester désactivé).
+10. Démarrage automatique de l’application sur le Pi :
+    - Crée logs dans `/home/bioattend/.bioattend/`
+    - Utilise `nohup` pour lancer `venv/bin/python -m flask --app app run --host 0.0.0.0 --port 5000` en arrière-plan.
+    - Stocke PID dans `/home/bioattend/.bioattend/app-<branch_slug>.pid`
+    - Teste la santé via `curl http://127.0.0.1:5000/health` pour valider le démarrage.
+11. Configuration du mode kiosk (autostart) sur le Pi :
+    - Génère un script `bioattend-kiosk.sh` dans `~/.local/bin/` qui attend le service et lance Chromium en mode `--kiosk --app=http://localhost:5000`.
+    - Met à jour `~/.config/lxsession/LXDE-pi/autostart` (et `/home/bioattend/.config/labwc/autostart`) pour que Chromium se lance automatiquement en session graphique.
+    - Le script gère logs, attente du service et lance Chromium avec options Wayland / kiosk.
 
-## Etat actuel du depot
+### Variables/Environnements passés au job
+- `PI_HOST` (depuis secret)
+- `PI_USER` = `"bioattend"`
+- `TAILSCALE_AUTHKEY` (secret)
+- `SSHPASS` = `PI_PASSWORD` (secret)
 
-Les briques minimales en place sont :
+### Remarques de sécurité / opération
+- Le workflow utilise `sshpass` et mot de passe SSH : en production, préférer clé SSH privée dans GitHub Secrets et usage `ssh -i` pour sécurité renforcée.
+- Tailscale permet joindre le Pi même derrière NAT — assure-toi de protéger la clé d'auth.
+- Le déploiement synchronise tout le repo vers le Pi (exclusion list incluse), puis installe requirements. Veiller à ne pas exposer secrets en clair dans le dépôt (jamais committer `.env`).
+- Lancer `migrations` / opérations lourdes côté serveur central n'est pas géré ici (ce workflow concerne uniquement l'app front).
 
-1. chargement de configuration depuis .env
-2. application Flask minimale
-3. endpoint de diagnostic camera
-4. fallback de capture Picamera2 pour Raspberry Pi
-5. endpoint de diagnostic detection/crop visage
-6. endpoint de diagnostic embedding InsightFace
-7. endpoint de diagnostic identify vers l'API distante
+---
 
-Fichiers principaux :
+## Exemples d'utilisation & debugging
 
-1. app.py
-2. src/bioattend_front/main.py
-3. src/bioattend_front/config.py
-4. src/bioattend_front/camera.py
+- Vérifier la santé :
+  ```bash
+  curl http://<pi-host>:5000/health
+  ```
 
-## Etapes suivantes prevues
+- Tester snapshot :
+  ```bash
+  curl -fsS http://<pi-host>:5000/snapshot > last.jpg
+  ```
 
-L'ordre retenu pour avancer proprement est :
+- Lancer un diagnostic caméra :
+  ```bash
+  curl -X POST http://<pi-host>:5000/diagnostics/camera
+  ```
 
-1. validation du capteur PIR
-2. declenchement conditionnel de la capture camera sur presence
-3. detection et extraction du visage
-4. liveness detection avec le modele impose par la partie IA
-5. generation de l'embedding
-6. appel a l'API distante
-7. interface utilisateur locale
+- Appeler la route pointage (simuler) : normalement l’UI appelle `/pointage` en POST sans corps (le serveur effectue capture localement). On peut appeler `/diagnostics/identify` pour simuler capture+identification et obtenir plus d'informations.
 
-Cet ordre permet de respecter le pipeline cible tout en gardant des points de test simples sur le Raspberry.
+- Voir config publique (utile pour vérifier que les variables d'env sur le Pi sont correctement prises) :
+  ```bash
+  curl http://<pi-host>:5000/diagnostics/config
+  ```
 
-## Lancement local de l'application
+---
 
-Depuis le depot :
+## Conseils d'exploitation & sécurité
 
-```bash
-python -m flask --app app run --host 0.0.0.0 --port 5000
-```
+- Ne jamais stocker `.env` dans le repo.
+- Préférer l'authentification par clé SSH plutôt que mot de passe pour le déploiement.
+- Protéger `API_TOKEN` utilisé entre le Pi et le serveur central. Dans le serveur central, utiliser une clé dédiée par Pi et prévoir rotation.
+- Sur Pi, exécuter dans un utilisateur non-root (ici `bioattend`).
+- Mettre en place logging central (logs écrits dans `/home/bioattend/.bioattend` par le workflow).
+- Superviser l'état du service (systemd, supervisord ou vérifier périodiquement `/health`).
 
-Routes utiles :
+---
 
-1. GET /health
-2. GET /diagnostics/config
-3. GET /diagnostics/camera
-4. GET /diagnostics/face
-5. GET /diagnostics/embedding
-6. GET /diagnostics/identify
+## Annexes
 
-## Dependances
-
-Les dependances Python du projet sont listees dans requirements.txt.
-
-Note importante pour le Raspberry Pi :
-
-1. certaines briques materielles peuvent dependre de paquets systeme presents sur Raspberry Pi OS
-2. le venv de deploiement est cree avec acces aux paquets systeme
-3. cela est particulierement utile pour la pile camera Raspberry
-
-## Ce que le projet ne fait pas encore
-
-A ce stade, le depot ne fait pas encore :
-
-1. la lecture du PIR
-2. la liveness
-3. l'affichage local sur l'ecran de la pointeuse
-
-Ce n'est pas un oubli. C'est un choix de sequence pour valider d'abord la base materielle et logicielle.
+- Fichier de configuration principal : `src/bioattend_front/config.py`
+- Client API : `src/bioattend_front/api_client.py`
+- Logic capture/mobile : `src/bioattend_front/camera.py`
+- Détection face : `src/bioattend_front/face.py`
+- Embedding : `src/bioattend_front/embedding.py`
+- Liveness : `src/bioattend_front/liveness.py`
+- Entrypoint : `app.py` (create_app)
